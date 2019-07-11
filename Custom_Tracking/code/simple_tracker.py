@@ -22,46 +22,62 @@ from siam_tracker.utils import get_axis_aligned_bbox, cxy_wh_2_rect
 
 
 
-def TRACKER(frame, initBB, fps, succcess_count, fail_count, df):
-
-
+def CV2_TRACKER(frame, tracker, initBB, fps, succcess_count, fail_count, df):
     (H, W) = frame.shape[:2]
 
-    # check to see if we are currently tracking an object
-    if initBB is not None:
-        # grab the new bounding box coordinates of the object
-        (success, box) = tracker.update(frame)
+    # grab the new bounding box coordinates of the object
+    (success, box) = tracker.update(frame)
 
-        if success:
-            succcess_count+=1
-        else:
-            fail_count +=1
+    if success:
+        succcess_count+=1
+    else:
+        fail_count +=1
 
-        # check to see if the tracking was a success
-        if success:
-            (x, y, w, h) = [int(v) for v in box]
-            cv2.rectangle(frame, (x, y), (x + w, y + h),(0, 255, 0), 2)
-            df.append([x,y])
+    # check to see if the tracking was a success
+    if success:
+        (x, y, w, h) = [int(v) for v in box]
+        cv2.rectangle(frame, (x, y), (x + w, y + h),(0, 255, 0), 2)
+        df.append([x,y])
 
-        # update the FPS counter
-        fps.update()
-        fps.stop()
+    # update the FPS counter
+    fps.update()
+    fps.stop()
 
-        # initialize the set of information we'll be displaying on
-        # the frame
-        info = [
-            ("Tracker", args.tracker),
-            ("Success", "Yes" if success else "No"),
-            ("FPS", "{:.2f}".format(fps.fps())),
-        ]
+    # initialize the set of information we'll be displaying on
+    # the frame
+    info = [
+        ("Tracker", args.tracker),
+        ("Success", "Yes" if success else "No"),
+        ("FPS", "{:.2f}".format(fps.fps())),
+    ]
 
-        # loop over the info tuples and draw them on our frame
-        for (i, (k, v)) in enumerate(info):
-            text = "{}: {}".format(k, v)
-            cv2.putText(frame, text, (10, H - ((i * 20) + 20)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+    # loop over the info tuples and draw them on our frame
+    for (i, (k, v)) in enumerate(info):
+        text = "{}: {}".format(k, v)
+        cv2.putText(frame, text, (10, H - ((i * 20) + 20)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+
 
     return initBB, fps, succcess_count, fail_count, df
 
+
+
+def Siam_TRACKER(frame, tracker, initBB, state, fps, df):
+    (H, W) = frame.shape[:2]
+
+    # tracking and visualization
+    state = SiamRPN_track(state, frame)  # track
+    res = cxy_wh_2_rect(state['target_pos'], state['target_sz'])
+    df.append([res[0], res[1]])
+
+    # update the FPS counter
+    fps.update()
+    fps.stop()
+    res = [int(l) for l in res]
+    cv2.rectangle(frame, (res[0], res[1]), (res[0] + res[2], res[1] + res[3]), (0, 255, 255), 3)
+    cv2.putText(frame, str(fps.fps()), (10, H - ((1 * 20) + 20)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+    cv2.waitKey(1)
+
+    return frame, tracker, initBB, state, fps, df
 
 
 def Main_Handler(args, tracker, path):
@@ -86,7 +102,10 @@ def Main_Handler(args, tracker, path):
             frame = imutils.resize(frame, width=800)
 
             if initBB is not None:
-                initBB, fps, succcess_count, fail_count, df = TRACKER(frame, initBB, fps, succcess_count, fail_count, df)
+                if args.model == 0:
+                    initBB, fps, succcess_count, fail_count, df = CV2_TRACKER(frame, tracker, initBB, fps, succcess_count, fail_count, df)
+                else:
+                    frame, tracker, initBB, state, fps, df = Siam_TRACKER(frame, tracker, initBB, state, fps, df)
 
             # show the output frame
             cv2.imshow("Frame", frame)
@@ -132,7 +151,11 @@ def Main_Handler(args, tracker, path):
                 break
 
             if initBB is not None:
-                initBB, fps, succcess_count, fail_count, df = TRACKER(frame, initBB, fps, succcess_count, fail_count, df)
+                if args.model == 0:
+                    initBB, fps, succcess_count, fail_count, df = CV2_TRACKER(frame, tracker, initBB, fps, succcess_count, fail_count, df)
+                else:
+                    frame, tracker, initBB, state, fps, df = Siam_TRACKER(frame, tracker, initBB, state, fps, df)
+
 
             # show the output frame
             cv2.imshow("Frame", frame)
@@ -142,9 +165,16 @@ def Main_Handler(args, tracker, path):
             if key == ord("s"):
                 # select the bounding box of the object we want to track (make sure you press ENTER or SPACE after selecting the ROI)
                 initBB = cv2.selectROI("Frame", frame, fromCenter=False,showCrosshair=True)
-        
-                # start OpenCV object tracker using the supplied bounding box coordinates, then start the FPS throughput estimator as well
-                tracker.init(frame, initBB)
+
+                if args.model == 1:
+                    x,y,w,h = initBB
+                    # tracker init
+                    target_pos, target_sz = np.array([x, y]), np.array([w, h])
+                    state = SiamRPN_init(frame, target_pos, target_sz, tracker)
+
+                else:
+                    # start OpenCV object tracker using the supplied bounding box coordinates, then start the FPS throughput estimator as well
+                    tracker.init(frame, initBB)
                 fps = FPS().start()
         
             # if the `q` key was pressed, break from the loop
@@ -157,7 +187,7 @@ def Main_Handler(args, tracker, path):
     # close all windows
     cv2.destroyAllWindows()
     print("\nStatistics: \n")
-    print("Success rate: {:.2f}%".format(succcess_count/(succcess_count+fail_count) * 100))
+    print("Success rate: {:.2f}%".format(succcess_count/(succcess_count+fail_count+1e8) * 100))
 
     df = pd.DataFrame(np.matrix(df), columns = ['centroid_x', 'centroid_y'])
     df.to_csv('tracked.csv')
@@ -180,9 +210,9 @@ def Main_Handler(args, tracker, path):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("--vid_path", type=str, help="path to input video file", default = "../data/mouse_video.mp4")
+    parser.add_argument("--vid_path", type=str, help="path to input video file", default = "../data/dashcam_boston.mp4")
     parser.add_argument("--input_type", type=int, help="Choose 0 for image sequences and 1 for video", default = 1)
-    parser.add_argument("--model", type=int, help="Choose 0 for CV2 tracker and 1 for DaSiamRPN tracker", default = 0)
+    parser.add_argument("--model", type=int, help="Choose 0 for CV2 tracker and 1 for DaSiamRPN tracker", default = 1)
     parser.add_argument("--tracker", type=str, help="OpenCV object tracker type", default="kcf")
     args = parser.parse_known_args()[0]
 
@@ -210,7 +240,7 @@ if __name__ == '__main__':
         tracker = OPENCV_OBJECT_TRACKERS[args.tracker]
     elif args.model == 1:
         tracker = SiamRPNvot()
-        tracker.load_state_dict(torch.load(join(realpath(dirname(__file__)), 'SiamRPNVOT.model')))
+        tracker.load_state_dict(torch.load(join(realpath(dirname(__file__)), './siam_tracker/SiamRPNVOT.model')))
         tracker.eval()
     else:
         sys.exit("[!] Incorrect Model argument: Choose 0 for CV2 tracker and 1 for DaSiamRPN tracker")
