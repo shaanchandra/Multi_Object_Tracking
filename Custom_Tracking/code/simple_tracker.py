@@ -73,7 +73,7 @@ def Siam_TRACKER(frame, tracker, initBB, state, fps, df):
     fps.update()
     fps.stop()
     res = [int(l) for l in res]
-    cv2.rectangle(frame, (res[0], res[1]), (res[0] + res[2], res[1] + res[3]), (0, 255, 255), 3)
+    cv2.rectangle(frame, (res[0], res[1]), (res[0] + res[2], res[1] + res[3]), (0, 255, 0), 2)
     cv2.putText(frame, str(fps.fps()), (10, H - ((1 * 20) + 20)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
     cv2.waitKey(1)
 
@@ -115,9 +115,16 @@ def Main_Handler(args, tracker, path):
             if key == ord("s"):
                 # select the bounding box of the object we want to track (make sure you press ENTER or SPACE after selecting the ROI)
                 initBB = cv2.selectROI("Frame", frame, fromCenter=False,showCrosshair=True)
-        
-                # start OpenCV object tracker using the supplied bounding box coordinates, then start the FPS throughput estimator as well
-                tracker.init(frame, initBB)
+
+                if args.model == 1:
+                    x,y,w,h = initBB
+                    # tracker init
+                    target_pos, target_sz = np.array([x, y]), np.array([w, h])
+                    state = SiamRPN_init(frame, target_pos, target_sz, tracker)
+                else:
+                    # start OpenCV object tracker using the supplied bounding box coordinates, then start the FPS throughput estimator as well
+                    tracker.init(frame, initBB)
+
                 fps = FPS().start()
         
             # if the `q` key was pressed, break from the loop
@@ -171,10 +178,10 @@ def Main_Handler(args, tracker, path):
                     # tracker init
                     target_pos, target_sz = np.array([x, y]), np.array([w, h])
                     state = SiamRPN_init(frame, target_pos, target_sz, tracker)
-
                 else:
                     # start OpenCV object tracker using the supplied bounding box coordinates, then start the FPS throughput estimator as well
                     tracker.init(frame, initBB)
+
                 fps = FPS().start()
         
             # if the `q` key was pressed, break from the loop
@@ -210,8 +217,8 @@ def Main_Handler(args, tracker, path):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("--vid_path", type=str, help="path to input video file", default = "../data/dashcam_boston.mp4")
-    parser.add_argument("--input_type", type=int, help="Choose 0 for image sequences and 1 for video", default = 1)
+    parser.add_argument("--vid_path", type=str, help="path to input video file", default = "../data/Dog/img/")
+    parser.add_argument("--input_type", type=int, help="Choose 0 for image sequences and 1 for video", default = 0)
     parser.add_argument("--model", type=int, help="Choose 0 for CV2 tracker and 1 for DaSiamRPN tracker", default = 1)
     parser.add_argument("--tracker", type=str, help="OpenCV object tracker type", default="kcf")
     args = parser.parse_known_args()[0]
