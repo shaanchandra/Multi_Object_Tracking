@@ -95,8 +95,7 @@ def TRACK(ct, frame, rects, trackers, rgb):
 
 
 
-def img_HANDLER(model, path, checkpoint_path):
-
+def Main_Handler(args, model, path, checkpoint_path):
     # initialize the frame dimensions (we'll set them as soon as we read the first frame from the video)
     W = None
     H = None
@@ -104,223 +103,74 @@ def img_HANDLER(model, path, checkpoint_path):
 
     # initialize the total number of frames processed thus far, along with the total number of objects that have moved either up or down
     totalFrames = 0
-    totalDown = 0
-    totalUp = 0
-
-    # start the frames per second throughput estimator
-    fps = FPS().start()
-    # img_path = '../data/Dog/img/*.jpg'
-    ct = CentroidTracker(maxDisappeared=10, maxDistance=100)
-    trackableObjects = {}
-
-    df = []
-
-    path = os.path.join(path, '*.jpg')
-    image_files = sorted(glob.glob(path))
-    # loop over frames from the video stream
-    for image in image_files:
-        frame = cv2.imread(image)
-
-        # resize the frame to have a maximum width of 500 pixels, then convert the frame from BGR to RGB for dlib
-        # frame = imutils.resize(frame, width=500)
-        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-
-        # if the frame dimensions are empty, set them
-        if W is None or H is None:
-            (H, W) = frame.shape[:2]
-
-         # Initialize the writer to construct the output video
-        if writer is None:
-            fourcc = cv2.VideoWriter_fourcc(*"MJPG")
-            writer = cv2.VideoWriter(checkpoint_path + 'out.mp4', fourcc, 30, (W, H), True)
-
-        # initialize the current status along with our list of bounding box rectangles returned by either (1) our object detector or
-        # (2) the correlation trackers
-        status = "Waiting"
-        rects = []
-
-        # check to see if we should run a more computationally expensive object detection method to aid our tracker
-        if totalFrames % args.skip_frames == 0:
-            # set the status and initialize our new set of object trackers
-            status = "Detecting"
-            startX, startY, endX, endY, ct, trackers = DETECT(model, ct, frame, W, H, rgb)
-
-        # otherwise, we should utilize our object *trackers* rather than object *detectors* to obtain a higher frame processing throughput
-        else:
-            status = "Tracking"
-            rects = TRACK(ct, frame, rects, trackers,rgb)
-
-        # use the centroid tracker to associate the (1) old object centroids with (2) the newly computed object centroids
-        objects = ct.update(rects)
-
-        # Write text and mark centroids on the frames
-        for (objectID, centroid) in objects.items():
-            track_obj = trackableObjects.get(objectID, None)
-
-            if track_obj is None:
-                track_obj = TrackableObject(objectID, centroid)
-
-            trackableObjects[objectID] = track_obj
-            text = "ID {}".format(objectID)
-            cv2.putText(frame, text, (centroid[0] - 10, centroid[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-            cv2.circle(frame, (centroid[0], centroid[1]), 4, (0, 255, 0), -1)
-            cv2.putText(frame, str(totalFrames), (5,25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
-            cv2.putText(frame, status, (5,40), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
-            df.append([totalFrames, objectID, startX, startY, endX, endY, centroid[0], centroid[1]])
-
-
-        if writer is not None:
-            writer.write(frame)
-    
-        # show the output frame
-        cv2.imshow("Frame", frame)
-        key = cv2.waitKey(1) & 0xFF
-    
-        # if the `q` key was pressed, break from the loop
-        if key == ord("q"):
-            break
-    
-        # increment the total number of frames processed thus far and
-        # then update the FPS counter
-        totalFrames += 1
-        fps.update()
-
-    # Stop the timer and display FPS information
-    fps.stop()
-    print("\nSTATISTICS:\n" + "-"*30)
-    print("Elapsed time:  {:.2f}".format(fps.elapsed()))
-    print("Approx. FPS:   {:.2f}".format(fps.fps()))
-    df = pd.DataFrame(np.matrix(df), columns = ['frame', 'ID','start_x','start_y', 'end_x', 'end_y', 'centroid_x', 'centroid_y'])
-    df.to_csv('tracked.csv')
-    df = pd.read_csv('tracked.csv')
-    df.describe()
-    df.head()
-    print("Number of unique objects detected and tracked:  ", len(df['ID'].unique()))
-
-    for idx, ID in enumerate(np.unique(df['ID'])):
-        df['ID'][df['ID'] == ID] = idx
-
-    plt.figure(figsize=(8,8))
-    plt.scatter(df['centroid_x'], df['centroid_y'], c=df['ID'], cmap='jet', alpha=0.5)
-    plt.xlabel('X', fontsize=16)
-    plt.ylabel('Y', fontsize=16)
-    plt.tight_layout()
-    plt.savefig('tracked_vis.png', format='png', dpi=300)
-    plt.show()
-    
-    # check to see if we need to release the video writer pointer
-    if writer is not None:
-        writer.release()
-
-    # close any open windows
-    cv2.destroyAllWindows()
-
-    return None
-
-
-
-
-def video_HANDLER(model, path, checkpoint_path):
-    vs = cv2.VideoCapture(path)
-    if vs.isOpened() == False:
-        sys.exit('Video file cannot be read! Please check input_vidpath to ensure it is correctly pointing to the video file')
-
-    
-    # initialize the frame dimensions (we'll set them as soon as we read the first frame from the video)
-    W = None
-    H = None
-    writer = None
-
-    # initialize the total number of frames processed thus far, along with the total number of objects that have moved either up or down
-    totalFrames = 0
-    totalDown = 0
-    totalUp = 0
 
     # start the frames per second throughput estimator
     fps = FPS().start()
     ct = CentroidTracker(maxDisappeared=50, maxDistance=100)
     trackableObjects = {}
     df = []
+    trackers = None
+    startX, startY, endX, endY = 0,0,0,0
+
+    if args.input_type == 1:
+
+        vs = cv2.VideoCapture(path)
+        if vs.isOpened() == False:
+            sys.exit('Video file cannot be read! Please check input_vidpath to ensure it is correctly pointing to the video file')
+
+        while True:
+            # grab the next frame
+            frame = vs.read()
+            frame = frame[1]
     
-    # loop over frames from the video stream
-    while True:
-        # grab the next frame
-        frame = vs.read()
-        frame = frame[1]
-
-        # if we are viewing a video and we did not grab a frame then we have reached the end of the video
-        if frame is None:
-            break
-
-        # resize the frame to have a maximum width of 500 pixels, then convert the frame from BGR to RGB for dlib
-        frame = imutils.resize(frame, width=700)
-        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            # if we are viewing a video and we did not grab a frame then we have reached the end of the video
+            if frame is None:
+                break
     
-        # if the frame dimensions are empty, set them
-        if W is None or H is None:
-            (H, W) = frame.shape[:2]
+            # resize the frame to have a maximum width of 500 pixels, then convert the frame from BGR to RGB for dlib
+            frame = imutils.resize(frame, width=700)
+            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            W, H, writer, totalFrames, trackers, trackableObjects, df, startX, startY, endX, endY = Main_Processor(frame, rgb, ct, W, H, writer, totalFrames, trackers,
+                                                                                                                   trackableObjects, df, startX, startY, endX, endY, checkpoint_path)
 
-          # Initialize the writer to construct the output video
-        if writer is None:
-            fourcc = cv2.VideoWriter_fourcc(*"MJPG")
-            writer = cv2.VideoWriter(checkpoint_path + 'out.mp4', fourcc, 30, (W, H), True)
+            key = cv2.waitKey(1) & 0xFF
+            # if the `q` key was pressed, break from the loop
+            if key == ord("q"):
+                break
 
-        # initialize the current status along with our list of bounding box rectangles returned by either (1) our object detector or
-        # (2) the correlation trackers
-        status = "Waiting"
-        rects = []
+            # increment the total number of frames processed thus far and then update the FPS counter
+            totalFrames += 1
+            fps.update()
+
+            # Stop the timer and display FPS information
+            fps.stop()
+        vs.release()
+
+    else:
+        path = os.path.join(path, '*.jpg')
+        image_files = sorted(glob.glob(path))
+        # loop over frames from the video stream
+        for image in image_files:
+            frame = cv2.imread(image)
     
-        # check to see if we should run a more computationally expensive object detection method to aid our tracker
-        if totalFrames % args.skip_frames == 0:
-            # set the status and initialize our new set of object trackers
-            status = "Detecting"
-            startX, startY, endX, endY, ct, trackers = DETECT(model, ct, frame, W, H, rgb)
+            # resize the frame to have a maximum width of 500 pixels, then convert the frame from BGR to RGB for dlib
+            # frame = imutils.resize(frame, width=500)
+            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            W, H, writer, totalFrames, trackers, trackableObjects, df, startX, startY, endX, endY = Main_Processor(frame, rgb, ct, W, H, writer, totalFrames, trackers,
+                                                                                                                   trackableObjects, df, startX, startY, endX, endY, checkpoint_path)
 
+            key = cv2.waitKey(1) & 0xFF
+            # if the `q` key was pressed, break from the loop
+            if key == ord("q"):
+                break
 
-        # otherwise, we should utilize our object *trackers* rather than object *detectors* to obtain a higher frame processing throughput
-        else:
-            status = "Tracking"
-            rects = TRACK(ct, frame, rects, trackers,rgb)
+            # increment the total number of frames processed thus far and then update the FPS counter
+            totalFrames += 1
+            fps.update()
+        
+            # Stop the timer and display FPS information
+            fps.stop()
 
-        # use the centroid tracker to associate the (1) old object centroids with (2) the newly computed object centroids
-        objects = ct.update(rects)
-
-        # Write text and mark centroids on the frames
-        for (objectID, centroid) in objects.items():
-            track_obj = trackableObjects.get(objectID, None)
-
-            if track_obj is None:
-                track_obj = TrackableObject(objectID, centroid)
-
-            trackableObjects[objectID] = track_obj
-
-
-            text = "ID {}".format(objectID)
-            cv2.putText(frame, text, (centroid[0] - 10, centroid[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-            cv2.circle(frame, (centroid[0], centroid[1]), 4, (0, 255, 0), -1)
-            cv2.putText(frame, str(totalFrames), (5,25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
-            cv2.putText(frame, status, (5,40), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
-            df.append([totalFrames, objectID, startX, startY, endX, endY, centroid[0], centroid[1]])
-
-
-        if writer is not None:
-            writer.write(frame)
-    
-        # show the output frame
-        cv2.imshow("Frame", frame)
-        key = cv2.waitKey(1) & 0xFF
-    
-        # if the `q` key was pressed, break from the loop
-        if key == ord("q"):
-            break
-
-        # increment the total number of frames processed thus far and
-        # then update the FPS counter
-        totalFrames += 1
-        fps.update()
-
-    # Stop the timer and display FPS information
-    fps.stop()
     print("\nSTATISTICS:\n" + "-"*30)
     print("Elapsed time:  {:.2f}".format(fps.elapsed()))
     print("Approx. FPS:   {:.2f}".format(fps.fps()))
@@ -346,12 +196,66 @@ def video_HANDLER(model, path, checkpoint_path):
     if writer is not None:
         writer.release()
 
-    vs.release()
-    
     # close any open windows
     cv2.destroyAllWindows()
 
-    return None
+
+
+def Main_Processor(frame, rgb, ct, W, H, writer, totalFrames, trackers, trackableObjects, df, startX, startY, endX, endY, checkpoint_path):
+    # if the frame dimensions are empty, set them
+    if W is None or H is None:
+        (H, W) = frame.shape[:2]
+
+      # Initialize the writer to construct the output video
+    if writer is None:
+        fourcc = cv2.VideoWriter_fourcc(*"MJPG")
+        writer = cv2.VideoWriter(checkpoint_path + 'out.mp4', fourcc, 30, (W, H), True)
+
+    # initialize the current status along with our list of bounding box rectangles returned by either (1) our object detector or
+    # (2) the correlation trackers
+    status = "Waiting"
+    rects = []
+
+    # check to see if we should run a more computationally expensive object detection method to aid our tracker
+    if totalFrames % args.skip_frames == 0:
+        # set the status and initialize our new set of object trackers
+        status = "Detecting"
+        startX, startY, endX, endY, ct, trackers = DETECT(model, ct, frame, W, H, rgb)
+
+
+    # otherwise, we should utilize our object *trackers* rather than object *detectors* to obtain a higher frame processing throughput
+    else:
+        status = "Tracking"
+        rects = TRACK(ct, frame, rects, trackers,rgb)
+
+    # use the centroid tracker to associate the (1) old object centroids with (2) the newly computed object centroids
+    objects = ct.update(rects)
+
+    # Write text and mark centroids on the frames
+    for (objectID, centroid) in objects.items():
+        track_obj = trackableObjects.get(objectID, None)
+
+        if track_obj is None:
+            track_obj = TrackableObject(objectID, centroid)
+
+        trackableObjects[objectID] = track_obj
+
+
+        text = "ID {}".format(objectID)
+        cv2.putText(frame, text, (centroid[0] - 10, centroid[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+        cv2.circle(frame, (centroid[0], centroid[1]), 4, (0, 255, 0), -1)
+        cv2.putText(frame, str(totalFrames), (5,25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
+        cv2.putText(frame, status, (5,40), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
+        df.append([totalFrames, objectID, startX, startY, endX, endY, centroid[0], centroid[1]])
+
+
+    if writer is not None:
+        writer.write(frame)
+
+    # show the output frame
+    cv2.imshow("Frame", frame)
+
+    return W, H, writer, totalFrames, trackers, trackableObjects, df, startX, startY, endX, endY
 
 
 
@@ -359,9 +263,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--prototxt", type = str, help="path to Caffe 'deploy' prototxt file", default = './model_checkpoint/MobileNetSSD_deploy.prototxt')
     parser.add_argument("--model", type = str, help="path to Caffe pre-trained model", default = './model_checkpoint/MobileNetSSD_deploy.caffemodel')
-    parser.add_argument("--data_path", type=str, help="path to optional input video file", default = '../data/example_01.mp4')
+    parser.add_argument("--data_path", type=str, help="path to optional input video file", default = '../data/crowd1/')
     parser.add_argument("--output_path", type=str, help="path to optional output video file", default = './output_checkpoints/')
-    parser.add_argument("--input_type", type=int, help="Choose 0 for image sequences and 1 for video", default = 1)
+    parser.add_argument("--input_type", type=int, help="Choose 0 for image sequences and 1 for video", default = 0)
     parser.add_argument("--confidence", type=float, help="minimum probability to filter weak detections", default = 0.7)
     parser.add_argument("--skip_frames", type=int, help="# of skip frames between detections", default=20)
     args = parser.parse_known_args()[0]
@@ -381,7 +285,7 @@ if __name__ == '__main__':
         sys.exit("[!] WARNING !! Data(input) path does NOT exist!!")
     if (args.data_path.endswith("mp4") or args.data_path.endswith("avi")) and args.input_type == 0:
         sys.exit("[!] WARNING !! Video file provided but processing mode is IMAGES")
-    if args.data_path.endswith("jpg")  and args.input_type == 1:
+    if args.data_path.endswith("/")  and args.input_type == 1:
         sys.exit("[!] WARNING !! Image file provided but processing mode is VIDEO")
 
 
@@ -400,11 +304,9 @@ if __name__ == '__main__':
     else:
         print("Output videos written at: ", checkpoint_path)
 
-    if args.input_type== 0:
-        img_HANDLER(model, path, checkpoint_path)
-    elif args.input_type == 1:
-        video_HANDLER(model, path, checkpoint_path)
-    else:
+    if not (args.input_type==0 or args.input_type == 1 ):
         sys.exit("[!] Incorrect Input Type argument: Choose 0 for image sequences and 1 for video")
+
+    Main_Handler(args, model, path, checkpoint_path)
 
 
