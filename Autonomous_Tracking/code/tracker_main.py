@@ -12,7 +12,7 @@ import cv2
 import glob
 
 import matplotlib
-matplotlib.use('Agg')
+# matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 import warnings
@@ -25,47 +25,114 @@ import os
 
 
 
-def DETECT(model, ct, frame, W, H, rgb):
+def DETECT(model, layer_names, ct, frame, W, H, rgb):
     # instantiate our centroid tracker, then initialize a list to store each of our dlib correlation trackers, followed by a dictionary to
     # map each unique object ID to a TrackableObject
     # ct = CentroidTracker(maxDisappeared=50, maxDistance=100)
     trackers = []
+    # trackers = cv2.MultiTracker_create()
     startX, startY, endX, endY = 0,0,0,0
 
 
     # convert the frame to a blob and pass the blob through the network and obtain the detections
-    blob = cv2.dnn.blobFromImage(frame, 0.007843, (W, H), 127.5)
-    model.setInput(blob)
-    detections = model.forward()
+    if args.model == 0:
+        blob = cv2.dnn.blobFromImage(frame, 0.007843, (W, H), 127.5)
+        model.setInput(blob)
+        start = time.time()
+        detections = model.forward()
+        end = time.time()
+    else:
+        blob = cv2.dnn.blobFromImage(frame, 1/255.0, (416,416), swapRB = True, crop = False)
+        model.setInput(blob)
+        start = time.time()
+        layer_outs = model.forward(layer_names)
+        end = time.time()
 
     # loop over the detections
-    for i in np.arange(0, detections.shape[2]):
-    # extract the confidence (i.e., probability) associated with the prediction
-        confidence = detections[0, 0, i, 2]
+    if args.model == 0:
+        for i in np.arange(0, detections.shape[2]):
+        # extract the confidence (i.e., probability) associated with the prediction
+            confidence = detections[0, 0, i, 2]
+    
+            # filter out weak detections by requiring a minimum confidence
+            if confidence > args.confidence:
+                # extract the index of the class label from the detections list
+                idx = int(detections[0, 0, i, 1])
+    
+                # if the class label is not a person, ignore it
+                if CLASSES[idx] != "person":
+                    continue
+    
+                # compute the (x, y)-coordinates of the bounding box for the object
+                box = detections[0, 0, i, 3:7] * np.array([W, H, W, H])
+                (startX, startY, endX, endY) = box.astype("int")
+    
+                # construct a dlib rectangle object from the bounding box coordinates and then start the dlib correlation tracker
+                correl_tracker = dlib.correlation_tracker()
+                rect = dlib.rectangle(startX, startY, endX, endY)
+                correl_tracker.start_track(rgb, rect)
+                # correl_tracker = cv2.TrackerKCF_create()
+    
+                # add the tracker to our list of trackers so we can utilize it during skip frames
+                trackers.append(correl_tracker)
+                # initBB = ([startX, startY, startX-endX, startY-endY])
+                # trackers.add(correl_tracker, frame, initBB)
+    
+                cv2.rectangle(frame, (startX, startY), (endX, endY),(0, 255, 0), 2)
+                cv2.putText(frame, str(confidence), (startX, startY-5), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
 
-        # filter out weak detections by requiring a minimum confidence
-        if confidence > args.confidence:
-            # extract the index of the class label from the detections list
-            idx = int(detections[0, 0, i, 1])
+    else:
+        boxes = []
+        confidences = []
+        # loop over each of the layer outputs
+        for out in layer_outs:
+            # loop over each detections
+            for detection in out:
+                # extract the class ID and confidence (i.e., probability) of the current object detection
+                scores = detection[5:]
+                confidence = scores[np.argmax(scores)]
 
-#             # if the class label is not a person, ignore it
-#             if CLASSES[idx] != "person":
-#                 continue
+                # filter out weak detections by requiring a minimum confidence
+                if confidence > args.confidence:
+                    box = detection[0:4] * np.array([W, H, W, H])
+                    (centerX, centerY, width, height) = box.astype("int")
 
-            # compute the (x, y)-coordinates of the bounding box for the object
-            box = detections[0, 0, i, 3:7] * np.array([W, H, W, H])
-            (startX, startY, endX, endY) = box.astype("int")
+                    # use the center (x, y)-coordinates to derive the top and and left corner of the bounding box
+                    x = int(centerX - (width / 2))
+                    y = int(centerY - (height / 2))
 
-            # construct a dlib rectangle object from the bounding box coordinates and then start the dlib correlation tracker
-            correl_tracker = dlib.correlation_tracker()
-            rect = dlib.rectangle(startX, startY, endX, endY)
-            correl_tracker.start_track(rgb, rect)
-            # correl_tracker = cv2.TrackerKCF_create()
+                    startX = x
+                    startY = y
+                    endX = x+width
+                    endY = y+height
 
-            # add the tracker to our list of trackers so we can utilize it during skip frames
-            trackers.append(correl_tracker)
+                    # construct a dlib rectangle object from the bounding box coordinates and then start the dlib correlation tracker
+                    correl_tracker = dlib.correlation_tracker()
+                    rect = dlib.rectangle(startX, startY, endX, endY)
+                    correl_tracker.start_track(rgb, rect)
 
-            cv2.rectangle(frame, (startX, startY), (endX, endY),(0, 255, 0), 2)
+                    # add the tracker to our list of trackers so we can utilize it during skip frames
+                    trackers.append(correl_tracker)
+
+                    boxes.append([x,y, int(width), int(height)])
+                    confidences.append(float(confidence))
+
+        # apply non-maxima suppression to suppress weak, overlapping bounding boxes
+        idxs = cv2.dnn.NMSBoxes(boxes, confidences, args.confidence,args.thresh)
+
+        # ensure at least one detection exists
+        if len(idxs) > 0:
+            # loop over the indexes we are keeping
+            for i in idxs.flatten():
+                # extract the bounding box coordinates
+                (x, y) = (boxes[i][0], boxes[i][1])
+                (w, h) = (boxes[i][2], boxes[i][3])
+    
+                # draw a bounding box rectangle and label on the frame
+                cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                cv2.putText(frame, str(confidences[i]), (x, y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
+
+
     return startX, startY, endX, endY, ct, trackers
 
 
@@ -79,7 +146,7 @@ def TRACK(ct, frame, rects, trackers, rgb):
         # (success, box) = tracker.update(rgb)
         pos = tracker.get_position()
 
-        # # unpack the position object
+        # unpack the position object
         startX = int(pos.left())
         startY = int(pos.top())
         endX = int(pos.right())
@@ -92,10 +159,17 @@ def TRACK(ct, frame, rects, trackers, rgb):
         # rects.append((x,y,w,h))
         cv2.rectangle(frame, (startX, startY), (endX, endY),(0, 255, 0), 2)
     return rects
+    # (success, box) = trackers.update(rgb)
+    # for b in box:
+    #     (x, y, w, h) = [int(v) for v in b]
+    #     cv2.rectangle(frame, (x, y), (x + w, y + h),(0, 255, 0), 2)
+    #     rects.append((x,y,w,h))
+    # return rects
 
 
 
-def Main_Handler(args, model, path, checkpoint_path):
+
+def Main_Handler(args, model, layer_names, path, checkpoint_path):
     # initialize the frame dimensions (we'll set them as soon as we read the first frame from the video)
     W = None
     H = None
@@ -106,7 +180,7 @@ def Main_Handler(args, model, path, checkpoint_path):
 
     # start the frames per second throughput estimator
     fps = FPS().start()
-    ct = CentroidTracker(maxDisappeared=50, maxDistance=100)
+    ct = CentroidTracker(maxDisappeared=100, maxDistance=200)
     trackableObjects = {}
     df = []
     trackers = None
@@ -118,6 +192,13 @@ def Main_Handler(args, model, path, checkpoint_path):
         if vs.isOpened() == False:
             sys.exit('Video file cannot be read! Please check input_vidpath to ensure it is correctly pointing to the video file')
 
+        try:
+            prop = cv2.cv.CV_CAP_PROP_FRAME_COUNT if imutils.is_cv2() else cv2.CAP_PROP_FRAME_COUNT
+            total = int(vs.get(prop))
+            print("Total frames in video being processed = ", total)
+        except:
+            print("[!] WARNING ! Could not determine the No. of frames in the video. Can not estimate completion time")
+
         while True:
             # grab the next frame
             frame = vs.read()
@@ -128,9 +209,9 @@ def Main_Handler(args, model, path, checkpoint_path):
                 break
     
             # resize the frame to have a maximum width of 500 pixels, then convert the frame from BGR to RGB for dlib
-            frame = imutils.resize(frame, width=700)
+            frame = imutils.resize(frame, width=340)
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            W, H, writer, totalFrames, trackers, trackableObjects, df, startX, startY, endX, endY = Main_Processor(frame, rgb, ct, W, H, writer, totalFrames, trackers,
+            W, H, writer, totalFrames, trackers, trackableObjects, df, startX, startY, endX, endY = Main_Processor(frame, model, layer_names, rgb, ct, W, H, writer, totalFrames, trackers,
                                                                                                                    trackableObjects, df, startX, startY, endX, endY, checkpoint_path)
 
             key = cv2.waitKey(1) & 0xFF
@@ -152,11 +233,11 @@ def Main_Handler(args, model, path, checkpoint_path):
         # loop over frames from the video stream
         for image in image_files:
             frame = cv2.imread(image)
-    
+
             # resize the frame to have a maximum width of 500 pixels, then convert the frame from BGR to RGB for dlib
             # frame = imutils.resize(frame, width=500)
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            W, H, writer, totalFrames, trackers, trackableObjects, df, startX, startY, endX, endY = Main_Processor(frame, rgb, ct, W, H, writer, totalFrames, trackers,
+            W, H, writer, totalFrames, trackers, trackableObjects, df, startX, startY, endX, endY = Main_Processor(frame, model, layer_names, rgb, ct, W, H, writer, totalFrames, trackers,
                                                                                                                    trackableObjects, df, startX, startY, endX, endY, checkpoint_path)
 
             key = cv2.waitKey(1) & 0xFF
@@ -168,8 +249,9 @@ def Main_Handler(args, model, path, checkpoint_path):
             totalFrames += 1
             fps.update()
         
-            # Stop the timer and display FPS information
-            fps.stop()
+        # Stop the timer and display FPS information
+        fps.stop()
+
 
     print("\nSTATISTICS:\n" + "-"*30)
     print("Elapsed time:  {:.2f}".format(fps.elapsed()))
@@ -201,7 +283,7 @@ def Main_Handler(args, model, path, checkpoint_path):
 
 
 
-def Main_Processor(frame, rgb, ct, W, H, writer, totalFrames, trackers, trackableObjects, df, startX, startY, endX, endY, checkpoint_path):
+def Main_Processor(frame, model, layer_names, rgb, ct, W, H, writer, totalFrames, trackers, trackableObjects, df, startX, startY, endX, endY, checkpoint_path):
     # if the frame dimensions are empty, set them
     if W is None or H is None:
         (H, W) = frame.shape[:2]
@@ -220,7 +302,7 @@ def Main_Processor(frame, rgb, ct, W, H, writer, totalFrames, trackers, trackabl
     if totalFrames % args.skip_frames == 0:
         # set the status and initialize our new set of object trackers
         status = "Detecting"
-        startX, startY, endX, endY, ct, trackers = DETECT(model, ct, frame, W, H, rgb)
+        startX, startY, endX, endY, ct, trackers = DETECT(model, layer_names, ct, frame, W, H, rgb)
 
 
     # otherwise, we should utilize our object *trackers* rather than object *detectors* to obtain a higher frame processing throughput
@@ -239,7 +321,6 @@ def Main_Processor(frame, rgb, ct, W, H, writer, totalFrames, trackers, trackabl
             track_obj = TrackableObject(objectID, centroid)
 
         trackableObjects[objectID] = track_obj
-
 
         text = "ID {}".format(objectID)
         cv2.putText(frame, text, (centroid[0] - 10, centroid[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
@@ -262,12 +343,15 @@ def Main_Processor(frame, rgb, ct, W, H, writer, totalFrames, trackers, trackabl
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--prototxt", type = str, help="path to Caffe 'deploy' prototxt file", default = './model_checkpoint/MobileNetSSD_deploy.prototxt')
-    parser.add_argument("--model", type = str, help="path to Caffe pre-trained model", default = './model_checkpoint/MobileNetSSD_deploy.caffemodel')
-    parser.add_argument("--data_path", type=str, help="path to optional input video file", default = '../data/crowd1/')
+    parser.add_argument("--model", type = int, help = "Choose 0 for MobileNet and 1 for YOLOv3", default = 1)
+    # parser.add_argument("--model_path", type = str, help="path to Caffe pre-trained model", default = './model_checkpoint/MobileNetSSD_deploy.caffemodel')
+    parser.add_argument("--model_path", type = str, help="path to Caffe pre-trained model", default = './model_checkpoint')
+    parser.add_argument("--data_path", type=str, help="path to optional input video file", default = '../data/brain1.mp4')
     parser.add_argument("--output_path", type=str, help="path to optional output video file", default = './output_checkpoints/')
-    parser.add_argument("--input_type", type=int, help="Choose 0 for image sequences and 1 for video", default = 0)
-    parser.add_argument("--confidence", type=float, help="minimum probability to filter weak detections", default = 0.7)
-    parser.add_argument("--skip_frames", type=int, help="# of skip frames between detections", default=20)
+    parser.add_argument("--input_type", type=int, help="Choose 0 for image sequences and 1 for video", default = 1)
+    parser.add_argument("--confidence", type=float, help="minimum probability to filter weak detections", default = 0.5)
+    parser.add_argument("--thresh", type =float, help = "threshold when applying non-maximum suppression", default = 0.3)
+    parser.add_argument("--skip_frames", type=int, help="# of skip frames between detections", default=12)
     args = parser.parse_known_args()[0]
 
     # initialize the list of class labels MobileNet SSD was trained to detect
@@ -276,10 +360,12 @@ if __name__ == '__main__':
         "dog", "horse", "motorbike", "person", "pottedplant", "sheep",
         "sofa", "train", "tvmonitor"]
 
+
+
     # Assert the requried paths and correct combination of arguments
     if not os.path.exists(args.prototxt):
         sys.exit("[!] WARNING !! Prototext path does NOT exist!!")
-    if not os.path.exists(args.model):
+    if not os.path.exists(args.model_path):
         sys.exit("[!] WARNING !! Model path does NOT exist!!")
     if not os.path.exists(args.data_path):
         sys.exit("[!] WARNING !! Data(input) path does NOT exist!!")
@@ -288,12 +374,28 @@ if __name__ == '__main__':
     if args.data_path.endswith("/")  and args.input_type == 1:
         sys.exit("[!] WARNING !! Image file provided but processing mode is VIDEO")
 
+    # Get the right model files based on the model selection
+    if args.model == 0:
+        model_path = os.path.join(args.model_path, 'MobileNetSSD_deploy.caffemodel')
+    elif args.model == 1:
+        wt_path  = os.path.join(args.model_path, 'yolov3.weights')
+        config_path = os.path.join(args.model_path, 'yolov3.cfg')
+    else:
+        sys.exit("[!] WARNING !! Incorrect Model selection: Choose 0 for MobileNet and 1 for YOLOv3")
+
 
 
     # load our serialized model from disk
     print("="*80 + "\n\t\t\t\t TRACKING\n" + "="*80)
     print("\nLoading model...")
-    model = cv2.dnn.readNetFromCaffe(args.prototxt, args.model)
+
+    if args.model == 0:
+        model = cv2.dnn.readNetFromCaffe(args.prototxt, args.model_path)
+        layer_names = None
+    else:
+        model = cv2.dnn.readNetFromDarknet(config_path, wt_path)
+        layer_names = model.getLayerNames()
+        layer_names = [layer_names[i[0] - 1] for i in model.getUnconnectedOutLayers()]
 
     path = args.data_path
     checkpoint_path = args.output_path
@@ -307,6 +409,6 @@ if __name__ == '__main__':
     if not (args.input_type==0 or args.input_type == 1 ):
         sys.exit("[!] Incorrect Input Type argument: Choose 0 for image sequences and 1 for video")
 
-    Main_Handler(args, model, path, checkpoint_path)
+    Main_Handler(args, model, layer_names, path, checkpoint_path)
 
 
