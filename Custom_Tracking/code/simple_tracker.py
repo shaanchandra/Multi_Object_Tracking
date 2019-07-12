@@ -35,9 +35,16 @@ def CV2_TRACKER(frame, tracker, initBB, fps, succcess_count, fail_count, df):
 
     # check to see if the tracking was a success
     if success:
-        (x, y, w, h) = [int(v) for v in box]
-        cv2.rectangle(frame, (x, y), (x + w, y + h),(0, 255, 0), 2)
-        df.append([x,y])
+        if not args.multi:
+            (x, y, w, h) = [int(v) for v in box]
+            cv2.rectangle(frame, (x, y), (x + w, y + h),(0, 255, 0), 2)
+            df.append([x,y])
+        else:
+            for b in box:
+                (x, y, w, h) = [int(v) for v in b]
+                cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                df.append([x,y])
+
 
     # update the FPS counter
     fps.update()
@@ -151,7 +158,7 @@ def Main_Handler(args, tracker, path):
             frame = frame[1]
 
             # resize the frame (so we can process it faster) and grab the frame dimensions
-            frame = imutils.resize(frame, width=800)
+            frame = imutils.resize(frame, width=400)
 
             # check to see if we have reached the end of the stream
             if frame is None:
@@ -179,8 +186,12 @@ def Main_Handler(args, tracker, path):
                     target_pos, target_sz = np.array([x, y]), np.array([w, h])
                     state = SiamRPN_init(frame, target_pos, target_sz, tracker)
                 else:
+                    if args.multi:
+                        tr = OPENCV_OBJECT_TRACKERS[args.tracker]
+                        tracker.add(tr, frame, initBB)
                     # start OpenCV object tracker using the supplied bounding box coordinates, then start the FPS throughput estimator as well
-                    tracker.init(frame, initBB)
+                    else:
+                        tracker.init(frame, initBB)
 
                 fps = FPS().start()
         
@@ -217,9 +228,10 @@ def Main_Handler(args, tracker, path):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("--vid_path", type=str, help="path to input video file", default = "../data/Dog/img/")
-    parser.add_argument("--input_type", type=int, help="Choose 0 for image sequences and 1 for video", default = 0)
-    parser.add_argument("--model", type=int, help="Choose 0 for CV2 tracker and 1 for DaSiamRPN tracker", default = 1)
+    parser.add_argument("--vid_path", type=str, help="path to input video file", default = "../data/brain2.mp4")
+    parser.add_argument("--input_type", type=int, help="Choose 0 for image sequences and 1 for video", default = 1)
+    parser.add_argument("--model", type=int, help="Choose 0 for CV2 tracker and 1 for DaSiamRPN tracker", default = 0)
+    parser.add_argument("--multi", type=bool, help="Multi object tracking or single object", default = True)
     parser.add_argument("--tracker", type=str, help="OpenCV object tracker type", default="kcf")
     args = parser.parse_known_args()[0]
 
@@ -243,14 +255,18 @@ if __name__ == '__main__':
             "mosse": cv2.TrackerMOSSE_create()
             }
 
-    if args.model == 0:
-        tracker = OPENCV_OBJECT_TRACKERS[args.tracker]
-    elif args.model == 1:
-        tracker = SiamRPNvot()
-        tracker.load_state_dict(torch.load(join(realpath(dirname(__file__)), './siam_tracker/SiamRPNVOT.model')))
-        tracker.eval()
+    if args.multi == False:
+        if args.model == 0:
+            tracker = OPENCV_OBJECT_TRACKERS[args.tracker]
+        elif args.model == 1:
+            tracker = SiamRPNvot()
+            tracker.load_state_dict(torch.load(join(realpath(dirname(__file__)), './siam_tracker/SiamRPNVOT.model')))
+            tracker.eval()
+        else:
+            sys.exit("[!] Incorrect Model argument: Choose 0 for CV2 tracker and 1 for DaSiamRPN tracker")
     else:
-        sys.exit("[!] Incorrect Model argument: Choose 0 for CV2 tracker and 1 for DaSiamRPN tracker")
+        tracker = cv2.MultiTracker_create()
+
 
 
 
