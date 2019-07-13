@@ -45,13 +45,13 @@ def Main_Processor(frame, model, layer_names, rgb, ct, W, H, writer, totalFrames
     if totalFrames % args.skip_frames == 0:
         # set the status and initialize our new set of object trackers
         status = "Detecting"
-        startX, startY, endX, endY, ct, trackers, start, end = DETECT(model, layer_names, ct, frame, W, H, rgb)
+        startX, startY, endX, endY, ct, trackers, start, end = DETECT(args, model, layer_names, ct, frame, W, H, rgb)
 
 
     # otherwise, we should utilize our object *trackers* rather than object *detectors* to obtain a higher frame processing throughput
     else:
         status = "Tracking"
-        rects = TRACK(ct, frame, rects, trackers,rgb)
+        rects = TRACK(args, ct, frame, rects, trackers,rgb)
 
     # use the centroid tracker to associate the (1) old object centroids with (2) the newly computed object centroids
     objects = ct.update(rects)
@@ -208,9 +208,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     # Required Paths
     parser.add_argument("--prototxt", type = str, help="path to Caffe 'deploy' prototxt file", default = './model_checkpoint/MobileNetSSD_deploy.prototxt')
-    parser.add_argument("--model", type = int, help = "Choose 0 for MobileNet and 1 for YOLOv3", default = 1)
+    parser.add_argument("--model", type = int, help = "Choose 0 for MobileNet and 1 for YOLOv3", default = 0)
     parser.add_argument("--model_path", type = str, help="path to Caffe pre-trained model", default = './model_checkpoint')
-    parser.add_argument("--data_path", type=str, help="path to optional input video file", default = '../data/brain2.mp4')
+    parser.add_argument("--data_path", type=str, help="path to optional input video file", default = '../data/cow_video.mp4')
     parser.add_argument("--output_path", type=str, help="path to optional output video file", default = './output_checkpoints/')
 
     # Tuning Parameters

@@ -23,8 +23,13 @@ sys.path.append("..")
 
 import os
 
+CLASSES = ["background", "aeroplane", "bicycle", "bird", "boat",
+        "bottle", "bus", "car", "cat", "chair", "cow", "diningtable",
+        "dog", "horse", "motorbike", "person", "pottedplant", "sheep",
+        "sofa", "train", "tvmonitor"]
 
-def DETECT(model, layer_names, ct, frame, W, H, rgb):
+
+def DETECT(args, model, layer_names, ct, frame, W, H, rgb):
     # instantiate our centroid tracker, then initialize a list to store each of our dlib correlation trackers, followed by a dictionary to
     # map each unique object ID to a TrackableObject
     # ct = CentroidTracker(maxDisappeared=50, maxDistance=100)
@@ -136,7 +141,7 @@ def DETECT(model, layer_names, ct, frame, W, H, rgb):
 
 
 
-def TRACK(ct, frame, rects, trackers, rgb):
+def TRACK(args, ct, frame, rects, trackers, rgb):
 
     # loop over the trackers
     for tracker in trackers:
