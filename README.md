@@ -31,12 +31,14 @@ This is the main file to run the custom tracking algorithm. Run this file with t
 
 The program will output a *mp4* file with the marked bounding boxes in each frame, a *csv* file with the marked centroid co-ordinates of each unique object in each frame and a *png* file containing the traced paths of each unique objects (*x-y coordinate system*).
 
+### Autonomous detection and Tracking
 
 #### ```tracker_main.py```
 
 This is the main file to run the autonomous object detection and tracking algorithm. Note that there are various tunable parameters that might have to be set by trial and error for different use cases. These are listed below along with the command line arguments:
 
 *Paths and selecteion arguments:*
+
 1. ***model***(int): Choose 0 for MobileNetSSD and 1 for YOLOv3 as the object detection model.
 2. ***prototext***(str): Path to Caffe 'deploy' prototxt file. Required if model = 0.
 3. ***model_path***(str): Path to the 'model_checkpoints' folder. The prrogram will choose to read the relevant model file automatically based on the selection of `model` parameter.
@@ -45,6 +47,7 @@ This is the main file to run the autonomous object detection and tracking algori
 6. ***output_path***(str): Path to the folder where you want to save the processed output file.
 
 *Tuning parameters:*
+
 7. ***max_disappeared***(int): Maximum subsequent frames a tracked object can be marked as 'disappeared' before forgetting it.
 8. ***max_distance***(int): Maximum distance the object should have drifted from its previous position to mark it is disappeared and treat it as a new object from now on
 9. ***resize***(bool): Resize the frames for faster processing
