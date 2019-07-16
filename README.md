@@ -15,7 +15,14 @@ Both the codes can run either on video files (ie, *mp4* or *avi* files), or a se
 
 ## Code
 
-It is advisable to maintain the hierarchy of folders as present here. However, if you change the structure of code make sure to change file paths accordingly.
+### Setting up the environment
+
+1. I would recommend installing Anaconda. That gets us the Conda package and environment manager, which just makes life more pleasant, in my experience.
+2. Run the command `conda create -n name_of_env_here python=3.7.3` to create a virtual environment for the project.
+3. Then run `conda activate name_of_env_just_created` to enter that virtual environment you just created.
+3. Install all the dependencies by running the command `pip install -r requirements.txt` after cloning this repository.
+
+It is advisable to maintain the hierarchy of folders as present here. However, if you change the structure of code make sure to be consistent with path arguments too.
 
 ### Custom Tracking
 
