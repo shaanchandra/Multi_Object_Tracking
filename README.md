@@ -3,11 +3,13 @@ Multiple Object detection and tracking in videos
 
 ## Overview
 
-The repository contains object tracking using 2 methods:
+The repository contains object tracking using 3 methods:
 
 1. **Custom BoundingBox + tracking**: This method is implemented under `Custom_Tracking`. The program outputs each frame when run, allowing to be paused at any time and mark the object of interest by dragging a bounding-box across the frame using the cursor. In all the subsequent frames, the program uses one of the 5 specified tracking algorithms implemented in OpenCV (*csrt, kcf, boosting, mil, tild, mosse and medianflow*) to track the object. There is also an option to choose a more advanced tracker called the Distractor-aware Siamese Region Propsal Network (DaSiamRPN).
 
-2. **Autonomous detection and tracking with unique ID tags**: This method is implented under `Autonomous_Tracking`. The program offers the option to either use pre-trained `YOLOv3` or `MobileNetSSD`(claimed to be 10 times faster in the original paper, I get it to be performing 4-5 times faster but with slightly poor qualitative performance) model for autonomous object detection in frames. I have used *Correlation_filter* of `dlib` and `centroid tracking` for tracking all the detected objects over the frames. Detection is run every few frames (set by a parameter) and in between detections only tracking phase operates. Objects leaving the frame or 'disappearing' can be dealt with a parameter too (No. of successive frames of failed object tracking before marking it as 'absent' and clearing its ID tracker).
+2. **Autonomous detection and tracking with unique ID tags**: This method is implemented under `Autonomous_Tracking`. The program offers the option to either use pre-trained `YOLOv3` or `MobileNetSSD`(claimed to be 10 times faster in the original paper, I get it to be performing 4-5 times faster but with slightly poor qualitative performance) model for autonomous object detection in frames. I have used *Correlation_filter* of `dlib` and `centroid tracking` for tracking all the detected objects over the frames. Detection is run every few frames (set by a parameter) and in between detections only tracking phase operates. Objects leaving the frame or 'disappearing' can be dealt with a parameter too (No. of successive frames of failed object tracking before marking it as 'absent' and clearing its ID tracker).
+
+3. **Background Segmentation**: This method is implemented under `Back_segm`. The program uses foreground-background segmentation methods with diluion and thresholding to track moving objects. Works under the strong assumption that the first frame of the video has the background only with no objects of interest.
 
 Both the programs generate the processed video with the tracked BoundingBox markings, a track plot and heat map of all the tracked objects and a `.csv` file with the *x* and *y* co-ordinates of each uniquely tracked object in each frame to aid any form of further processing (for instance, behavorial analysis, clustering, etc).
 
