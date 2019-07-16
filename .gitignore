@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.direnv/
+.sonarlint/
+.ipynb_checkpoints/
+docs/_build/
+.vscode/
+.gitattributes
+.tox/
+build/
+dist/
+*.egg-info/
+.idea/
+.pytest_cache/
