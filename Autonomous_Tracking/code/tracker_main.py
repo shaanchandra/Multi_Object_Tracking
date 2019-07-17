@@ -34,7 +34,7 @@ def Main_Processor(frame, model, layer_names, rgb, ct, W, H, writer, totalFrames
       # Initialize the writer to construct the output video
     if writer is None:
         fourcc = cv2.VideoWriter_fourcc(*"MJPG")
-        writer = cv2.VideoWriter(checkpoint_path + 'out.mp4', fourcc, 30, (W, H), True)
+        writer = cv2.VideoWriter(checkpoint_path + 'out_cow.mp4', fourcc, args.fps, (W, H), True)
 
     # initialize the current status along with our list of bounding box rectangles returned by either (1) our object detector or
     # (2) the correlation trackers
@@ -46,6 +46,11 @@ def Main_Processor(frame, model, layer_names, rgb, ct, W, H, writer, totalFrames
         # set the status and initialize our new set of object trackers
         status = "Detecting"
         startX, startY, endX, endY, ct, trackers, start, end = DETECT(args, model, layer_names, ct, frame, W, H, rgb)
+
+        # if args.tracker == 'kf':
+        #     c_x = (startX + endX)/2
+        #     c_y = (startY + endY)/2
+        #     centres = np.array([[cx,cy]])
 
 
     # otherwise, we should utilize our object *trackers* rather than object *detectors* to obtain a higher frame processing throughput
@@ -66,10 +71,10 @@ def Main_Processor(frame, model, layer_names, rgb, ct, W, H, writer, totalFrames
         trackableObjects[objectID] = track_obj
 
         text = "ID {}".format(objectID)
-        cv2.putText(frame, text, (centroid[0] - 10, centroid[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+        cv2.putText(frame, text, (centroid[0] - 10, centroid[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
         cv2.circle(frame, (centroid[0], centroid[1]), 4, (0, 255, 0), -1)
-        cv2.putText(frame, str(totalFrames), (5,25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
-        cv2.putText(frame, status, (5,40), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
+        cv2.putText(frame, str(totalFrames), (5,25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
+        cv2.putText(frame, status, (5,40), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
         df.append([totalFrames, objectID, startX, startY, endX, endY, centroid[0], centroid[1]])
 
 
@@ -78,6 +83,7 @@ def Main_Processor(frame, model, layer_names, rgb, ct, W, H, writer, totalFrames
 
     # show the output frame
     cv2.imshow("Frame", frame)
+    time.sleep(0.05)
 
     return W, H, writer, totalFrames, trackers, trackableObjects, df, startX, startY, endX, endY, start, end
 
@@ -98,6 +104,7 @@ def Main_Handler(args, model, layer_names, path, checkpoint_path):
     trackableObjects = {}
     df = []
     trackers = None
+    total = -1
     startX, startY, endX, endY = 0,0,0,0
     start, end = 0,0
 
@@ -112,11 +119,14 @@ def Main_Handler(args, model, layer_names, path, checkpoint_path):
             total = int(vs.get(prop))
         except:
             print("[!] WARNING ! Could not determine the No. of frames in the video. Can not estimate completion time")
-
+        c = 0
         while True:
             # grab the next frame
             frame = vs.read()
             frame = frame[1]
+            c+=1
+            if c<1500:
+                continue
     
             # if we are viewing a video and we did not grab a frame then we have reached the end of the video
             if frame is None:
@@ -145,13 +155,34 @@ def Main_Handler(args, model, layer_names, path, checkpoint_path):
     else:
         path = os.path.join(path, '*.jpg')
         image_files = sorted(glob.glob(path))
+        try:
+            prop = cv2.cv.CV_CAP_PROP_FRAME_COUNT if imutils.is_cv2() else cv2.CAP_PROP_FRAME_COUNT
+            total = int(vs.get(prop))
+        except:
+            print("[!] WARNING ! Could not determine the No. of frames in the video. Can not estimate completion time")
+
         # loop over frames from the video stream
+        count=0
         for image in image_files:
             frame = cv2.imread(image)
-
+            count+=1
+            if count<1200:
+                continue
             # resize the frame to have a maximum width of 500 pixels, then convert the frame from BGR to RGB for dlib
             if args.resize:
                 frame = imutils.resize(frame, width = args.im_width)
+
+            # Apply Gaussian/BiLateral blur to smooth out the background
+            ### cv2.GaussianBlur(img, (kernel_size), sigmas)
+            ### If one given, other also equal to this. If 0 given then calcul from the kernel size
+            # frame = cv2.GaussianBlur(frame, (5,5), 0)
+
+            ### cv2.bilateralFilter(src_img, diameter, sigmaColor, sigmaSpace)
+            ### Higher SC means farther colors in the neigh will be mixed together resulting in larger areas of sem-equal color
+            ### Higher SS means farther pixels will influence each other as long as colors close enough. If d given, that is
+            ### taken as neigh size else d propr to SS
+            frame = cv2.bilateralFilter(frame, 4, 100, 100)
+
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             W, H, writer, totalFrames, trackers, trackableObjects, df, startX, startY, endX, endY, start, end = Main_Processor(frame, model, layer_names, rgb, ct, W, H, writer, totalFrames, trackers,
                                                                                                                    trackableObjects, df, startX, startY, endX, endY, start, end, checkpoint_path)
@@ -171,11 +202,11 @@ def Main_Handler(args, model, layer_names, path, checkpoint_path):
 
     elap_estimate = end-start
     print("\n" + "-"*50 + "\n\t\tSTATISTICS:\n" + "-"*50)
-    print("Total frames in video being processed =    ", total)
-    print("Detection on single frame takes:      {:.4f} secs".format(elap_estimate))
+    print("\nTotal frames in video being processed:                                  ", total)
+    print("Detection on single frame takes:                                         {:.4f} secs".format(elap_estimate))
     print("Estimated total time to finish (detection at every frame, no tracking):  {:.2f} secs".format(elap_estimate*total))
-    print("Actual Elapsed time with tracking:       {:.2f} secs".format(fps.elapsed()))
-    print("Approx. FPS:   {:.2f}".format(fps.fps()))
+    print("Actual Elapsed time with tracking:                                       {:.2f} secs".format(fps.elapsed()))
+    print("Approx. FPS:                                                             {:.2f}".format(fps.fps()))
 
 
     df = pd.DataFrame(np.matrix(df), columns = ['frame', 'ID','start_x','start_y', 'end_x', 'end_y', 'centroid_x', 'centroid_y'])
@@ -183,7 +214,7 @@ def Main_Handler(args, model, layer_names, path, checkpoint_path):
     df = pd.read_csv('tracked.csv')
     df.describe()
     df.head()
-    print("Number of unique objects detected and tracked:  ", len(df['ID'].unique()))
+    print("Number of unique objects detected and tracked:                          ", len(df['ID'].unique()))
 
     for idx, ID in enumerate(np.unique(df['ID'])):
         df['ID'][df['ID'] == ID] = idx
@@ -209,21 +240,21 @@ def Main_Handler(args, model, layer_names, path, checkpoint_path):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     # Required Paths
-    parser.add_argument("--prototxt", type = str, help="path to Caffe 'deploy' prototxt file", default = './model_checkpoint/MobileNetSSD_deploy.prototxt')
     parser.add_argument("--model", type = int, help = "Choose 0 for MobileNet and 1 for YOLOv3", default = 1)
     parser.add_argument("--model_path", type = str, help="path to Caffe pre-trained model", default = './model_checkpoint')
-    parser.add_argument("--input_type", type=int, help="Choose 0 for image sequences and 1 for video", default = 1)
-    parser.add_argument("--data_path", type=str, help="path to input video file", default = '../data/brain2.mp4')
+    parser.add_argument("--input_type", type=int, help="Choose 0 for image sequences and 1 for video", default = 0)
+    parser.add_argument("--data_path", type=str, help="path to input video file", default = '../data/cow5/')
     parser.add_argument("--output_path", type=str, help="path to optional output video file", default = './output_checkpoints/')
+    parser.add_argument("--fps", type = int, help = "At what fps to write to output file for playback analysis", default = 4.5)
 
     # Tuning Parameters
-    parser.add_argument("--max_disappeared", type=int, help = "Maximum frames a tracked object can be marked as 'disappeared' before forgetting it", default = 100)
-    parser.add_argument("--resize", type = bool, help = "Whether to resize the frames for faster processing", default = True)
-    parser.add_argument("--im_width", type = int, help = "Image Width for resizing the image", default = 350)
-    parser.add_argument("--max_distance", type=int, help ="Maximum distance the object should have drifted from its previous position to mark it is disappeared and treat it as a new object", default = 100)
-    parser.add_argument("--confidence", type=float, help="minimum probability to filter weak detections", default = 0.65)
-    parser.add_argument("--thresh", type =float, help = "threshold when applying non-maximum suppression", default = 0.55)
-    parser.add_argument("--skip_frames", type=int, help="# of skip frames between detections", default= 15)
+    parser.add_argument("--max_disappeared", type=int, help = "Maximum frames a tracked object can be marked as 'disappeared' before forgetting it", default = 50)
+    parser.add_argument("--max_distance", type=int, help ="Maximum distance the object should have drifted from its previous position to mark it is disappeared and treat it as a new object", default = 1000)
+    parser.add_argument("--resize", type = bool, help = "Whether to resize the frames for faster processing", default = False)
+    parser.add_argument("--im_width", type = int, help = "Image Width for resizing the image", default = 400)
+    parser.add_argument("--confidence", type=float, help="minimum probability to filter weak detections", default = 0.00)
+    parser.add_argument("--thresh", type =float, help = "threshold when applying non-maximum suppression", default = 0.25)
+    parser.add_argument("--skip_frames", type=int, help="# of skip frames between detections", default= 10)
     args = parser.parse_known_args()[0]
 
     # initialize the list of class labels MobileNet SSD was trained to detect
@@ -235,9 +266,6 @@ if __name__ == '__main__':
 
 
     # Assert the requried paths and correct combination of arguments
-    if args.model == 0:
-        if not os.path.exists(args.prototxt):
-            sys.exit("[!] WARNING !! Prototext path does NOT exist!!")
     if not os.path.exists(args.model_path):
         sys.exit("[!] WARNING !! Model path does NOT exist!!")
     if not os.path.exists(args.data_path):
@@ -249,7 +277,8 @@ if __name__ == '__main__':
 
     # Get the right model files based on the model selection
     if args.model == 0:
-        model_path = os.path.join(args.model_path, 'MobileNetSSD_deploy.caffemodel')
+        model_path = os.path.join(args.model_path, 'MobileNetSSD_deploy.caffemodel')#MobileNetSSD_deploy
+        prototxt = os.path.join(args.model_path, 'MobileNetSSD_deploy.prototxt')#'MobileNetSSD_deploy.prototxt')
     elif args.model == 1:
         wt_path  = os.path.join(args.model_path, 'yolov3.weights')
         config_path = os.path.join(args.model_path, 'yolov3.cfg')
@@ -263,7 +292,7 @@ if __name__ == '__main__':
     print("\nLoading model...")
 
     if args.model == 0:
-        model = cv2.dnn.readNetFromCaffe(args.prototxt, args.model_path)
+        model = cv2.dnn.readNetFromCaffe(prototxt, args.model_path)
         layer_names = None
     else:
         model = cv2.dnn.readNetFromDarknet(config_path, wt_path)
@@ -288,6 +317,6 @@ if __name__ == '__main__':
     # Best Settings #
     #################
 
-    # brain2.mp4 : 100, 75, 0.65, 0.55, 15
+    # brain2.mp4 : 100, 75, 0.65, 0.55, 15 with YOLOv3
 
 
