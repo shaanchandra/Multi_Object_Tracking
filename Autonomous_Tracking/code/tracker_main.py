@@ -7,11 +7,13 @@ from utils import DETECT, TRACK
 import pandas as pd
 import numpy as np
 import argparse
+import configargparse
 import imutils
 import time
 import dlib
 import cv2
 import glob
+import yaml
 
 import matplotlib
 # matplotlib.use('Agg')
@@ -26,6 +28,7 @@ sys.path.append("..")
 import os
 
 
+### Used by Main_Handler to apply DETECT or TRACK and generate tracked frames
 def Main_Processor(frame, model, layer_names, rgb, ct, W, H, writer, totalFrames, trackers, trackableObjects, df, startX, startY, endX, endY, start, end, checkpoint_path):
     # if the frame dimensions are empty, set them
     if W is None or H is None:
@@ -34,7 +37,7 @@ def Main_Processor(frame, model, layer_names, rgb, ct, W, H, writer, totalFrames
       # Initialize the writer to construct the output video
     if writer is None:
         fourcc = cv2.VideoWriter_fourcc(*"MP4V")
-        writer = cv2.VideoWriter(checkpoint_path + 'out_cow_test.mp4', fourcc, args.fps, (W, H), True)
+        writer = cv2.VideoWriter(checkpoint_path, fourcc, args.fps, (W, H), True)
 
     # initialize the current status along with our list of bounding box rectangles returned by either (1) our object detector or
     # (2) the correlation trackers
@@ -46,12 +49,6 @@ def Main_Processor(frame, model, layer_names, rgb, ct, W, H, writer, totalFrames
         # set the status and initialize our new set of object trackers
         status = "Detecting"
         startX, startY, endX, endY, ct, trackers, start, end = DETECT(args, model, layer_names, ct, frame, W, H, rgb)
-
-        # if args.tracker == 'kf':
-        #     c_x = (startX + endX)/2
-        #     c_y = (startY + endY)/2
-        #     centres = np.array([[cx,cy]])
-
 
     # otherwise, we should utilize our object *trackers* rather than object *detectors* to obtain a higher frame processing throughput
     else:
@@ -89,6 +86,8 @@ def Main_Processor(frame, model, layer_names, rgb, ct, W, H, writer, totalFrames
 
 
 
+
+### Based on video or image sequences as input, this block applies appropriate read, write and pre-processing steps
 def Main_Handler(args, model, layer_names, path, checkpoint_path):
     # initialize the frame dimensions (we'll set them as soon as we read the first frame from the video)
     W = None
@@ -124,7 +123,7 @@ def Main_Handler(args, model, layer_names, path, checkpoint_path):
             # grab the next frame
             frame = vs.read()
             frame = frame[1]
-            # c+=1
+            c+=1
             # if c<1500:
             #     continue
     
@@ -135,10 +134,38 @@ def Main_Handler(args, model, layer_names, path, checkpoint_path):
             # resize the frame to have a maximum width of 500 pixels, then convert the frame from BGR to RGB for dlib
             if args.resize:
                 frame = imutils.resize(frame, width=args.im_width)
-            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+            # Apply Gaussian/BiLateral blur to smooth out the background
+            ### cv2.GaussianBlur(img, (kernel_size), sigmas)
+            ### If one given, other also equal to this. If 0 given then calcul from the kernel size
+            # frame = cv2.GaussianBlur(frame, (5,5), 0)
+
+            ### cv2.bilateralFilter(src_img, diameter, sigmaColor, sigmaSpace)
+            ### Higher SC means farther colors in the neigh will be mixed together resulting in larger areas of sem-equal color
+            ### Higher SS means farther pixels will influence each other as long as colors close enough. If d given, that is
+            ### taken as neigh size else d propr to SS
+            cv2.imshow("Orig Frame", frame)
+            frame = cv2.bilateralFilter(frame, 35, 150, 100)
+
+            # Segmentation
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            # cv2.imshow("Gray", gray)
+            # ret, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+            thresh = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY,21,10)
+            cv2.imshow("Thresh", thresh)
+
+            # Further noise removal
+            kernel = np.ones((3, 3), np.uint8)
+            denoised = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel, iterations=1)
+            # cv2.imshow("Denoised-Thresh", denoised)
+
+            # # Finding sure foreground area
+            # dist_transform = cv2.distanceTransform(denoised, cv2.DIST_L2, 5)
+            # ret, sure_fg = cv2.threshold(dist_transform, 0.7 * dist_transform.max(), 255, 0)
+            # cv2.imshow("Foreground", sure_fg)
             W, H, writer, totalFrames, trackers, trackableObjects, df, startX, startY, endX, endY, start, end = Main_Processor(frame, model, layer_names, rgb, ct, W, H, writer, totalFrames, trackers,
                                                                                                                    trackableObjects, df, startX, startY, endX, endY, start, end, checkpoint_path)
-
             key = cv2.waitKey(1) & 0xFF
             # if the `q` key was pressed, break from the loop
             if key == ord("q"):
@@ -173,23 +200,26 @@ def Main_Handler(args, model, layer_names, path, checkpoint_path):
                 frame = imutils.resize(frame, width = args.im_width)
 
             # Apply Gaussian/BiLateral blur to smooth out the background
-            ### cv2.GaussianBlur(img, (kernel_size), sigmas)
-            ### If one given, other also equal to this. If 0 given then calcul from the kernel size
-            # frame = cv2.GaussianBlur(frame, (5,5), 0)
+            if args.filter_type == 0:
+                ### cv2.GaussianBlur(img, (kernel_size), sigmas)
+                ### If one given, other also equal to this. If 0 given then calcul from the kernel size
+                cv2.imshow("Orig Frame", frame)
+                frame = cv2.GaussianBlur(frame, (5,5), 0)
 
-            ### cv2.bilateralFilter(src_img, diameter, sigmaColor, sigmaSpace)
-            ### Higher SC means farther colors in the neigh will be mixed together resulting in larger areas of sem-equal color
-            ### Higher SS means farther pixels will influence each other as long as colors close enough. If d given, that is
-            ### taken as neigh size else d propr to SS
-            cv2.imshow("Orig Frame", frame)
-            frame = cv2.bilateralFilter(frame, 35, 150, 100)
+            else:
+                ### cv2.bilateralFilter(src_img, diameter, sigmaColor, sigmaSpace)
+                ### Higher SC means farther colors in the neigh will be mixed together resulting in larger areas of sem-equal color
+                ### Higher SS means farther pixels will influence each other as long as colors close enough. If d given, that is
+                ### taken as neigh size else d propr to SS
+                cv2.imshow("Orig Frame", frame)
+                frame = cv2.bilateralFilter(frame, 35, args.sigma_color, args.sigma_space)
 
             # Segmentation
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            cv2.imshow("Gray", gray)
+            # cv2.imshow("Gray", gray)
             # ret, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-            thresh = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY,21,10)
+            thresh = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, args.block_size, args.constant)
             cv2.imshow("Thresh", thresh)
 
             # Further noise removal
@@ -202,10 +232,8 @@ def Main_Handler(args, model, layer_names, path, checkpoint_path):
             # ret, sure_fg = cv2.threshold(dist_transform, 0.7 * dist_transform.max(), 255, 0)
             # cv2.imshow("Foreground", sure_fg)
 
-
             W, H, writer, totalFrames, trackers, trackableObjects, df, startX, startY, endX, endY, start, end = Main_Processor(frame, model, layer_names, thresh, ct, W, H, writer, totalFrames, trackers,
                                                                                                                    trackableObjects, df, startX, startY, endX, endY, start, end, checkpoint_path)
-
             key = cv2.waitKey(1) & 0xFF
             # if the `q` key was pressed, break from the loop
             if key == ord("q"):
@@ -254,6 +282,7 @@ def Main_Handler(args, model, layer_names, path, checkpoint_path):
     cv2.destroyAllWindows()
 
 
+### To compare videos generated from different kind of pre-prcoessing for analysis
 def compare():
     orig_path = os.path.join(args.output_path, 'out_cow_orig.mp4')
     gray_path = os.path.join(args.output_path, 'out_cow_gray.mp4')
@@ -289,32 +318,72 @@ def compare():
     cv2.destroyAllWindows()
 
 
+### Generate config yaml file for arguments
+def generate_yaml(name):
+
+    data = {'model' : 1,
+            'model_path' :'./model_checkpoint',
+            'input_type' : 0,
+            'data_path' : '../data/cow5/',
+            'output_path' : './output_checkpoints',
+            'fps' : 4.5,
+            'max_disappeared' : 10,
+            'max_distance' : 1000,
+            'resize' : True,
+            'im_width' : 700,
+            'confidence' : 0.1,
+            'thresh' : 0.25,
+            'skip_frames' : 10,
+            'filter_type' : 1,
+            'sigma_color' : 150,
+            'sigma_space' : 100,
+            'block_size' : 21,
+            'constant' : 10}
+
+    f = open(name, 'w')
+    yaml.dump(data)
+    yaml.dump(data, f)
+    f.close()
+
+
+
+
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser()
+    p = configargparse.ArgParser()
+
+    p.add('-c', '--config', required=False, is_config_file=True, help='Script running Autonomous object detection and tracking on cow5 data',
+          default = './configs/cow5_best.yml')
     # Required Paths
-    parser.add_argument("--model", type = int, help = "Choose 0 for MobileNet and 1 for YOLOv3", default = 1)
-    parser.add_argument("--model_path", type = str, help="path to Caffe pre-trained model", default = './model_checkpoint')
-    parser.add_argument("--input_type", type=int, help="Choose 0 for image sequences and 1 for video", default = 0)
-    parser.add_argument("--data_path", type=str, help="path to input video file", default = '../data/cow5/')
-    parser.add_argument("--output_path", type=str, help="path to optional output video file", default = './output_checkpoints/')
-    parser.add_argument("--fps", type = int, help = "At what fps to write to output file for playback analysis", default = 4.5)
+    p.add("--model", type = int, help = "Choose 0 for MobileNet and 1 for YOLOv3", default = 1)
+    p.add("--model_path", type = str, help="path to Caffe pre-trained model", default = './model_checkpoint')
+    p.add("--input_type", type=int, help="Choose 0 for image sequences and 1 for video", default = 1)
+    p.add("--data_path", type=str, help="path to input video file", default = '../data/cow5/')
+    p.add("--output_path", type=str, help="path to optional output video file", default = './output_checkpoints')
+    p.add("--fps", type = float, help = "At what fps to write to output file for playback analysis", default = 4.5)
+
+    # Pre-prcoessing parameters
+    p.add("--filter_type", type = int, help = "Choose 0 for Gaussian blur or 1 for BiLateral filter", default = 1)
+    p.add("--sigma_color", type = int, help = "Filter sigma in the color space", default = 150)
+    p.add("--sigma_space", type = int, help = "Filter sigma in the co-ordinate space", default = 100)
+    p.add("--block_size", type = int, help = "Pixel neighbourhood size for adaptive thresholding", default = 21)
+    p.add("--constant", type = int, help = "Constant subtracted from weighted mean in adaptive thresholding", default = 10)
 
     # Tuning Parameters
-    parser.add_argument("--max_disappeared", type=int, help = "Maximum frames a tracked object can be marked as 'disappeared' before forgetting it", default = 10)
-    parser.add_argument("--max_distance", type=int, help ="Maximum distance the object should have drifted from its previous position to mark it is disappeared and treat it as a new object", default = 1000)
-    parser.add_argument("--resize", type = bool, help = "Whether to resize the frames for faster processing", default = True)
-    parser.add_argument("--im_width", type = int, help = "Image Width for resizing the image", default = 700)
-    parser.add_argument("--confidence", type=float, help="minimum probability to filter weak detections", default = 0.1)
-    parser.add_argument("--thresh", type =float, help = "threshold when applying non-maximum suppression", default = 0.25)
-    parser.add_argument("--skip_frames", type=int, help="# of skip frames between detections", default= 10)
-    args = parser.parse_known_args()[0]
+    p.add("--max_disappeared", type=int, help = "Maximum frames a tracked object can be marked as 'disappeared' before forgetting it", default = 10)
+    p.add("--max_distance", type=int, help ="Maximum distance the object should have drifted from its previous position to mark it is disappeared and treat it as a new object", default = 1000)
+    p.add("--resize", type = bool, help = "Whether to resize the frames for faster processing", default = True)
+    p.add("--im_width", type = int, help = "Image Width for resizing the image", default = 300)
+    p.add("--confidence", type=float, help="minimum probability to filter weak detections", default = 0.1)
+    p.add("--thresh", type =float, help = "threshold when applying non-maximum suppression", default = 0.25)
+    p.add("--skip_frames", type=int, help="No. of frames to skip between detections", default= 10)
+
+    args = p.parse_args()
 
     # initialize the list of class labels MobileNet SSD was trained to detect
     CLASSES = ["background", "aeroplane", "bicycle", "bird", "boat",
         "bottle", "bus", "car", "cat", "chair", "cow", "diningtable",
         "dog", "horse", "motorbike", "person", "pottedplant", "sheep",
         "sofa", "train", "tvmonitor"]
-
 
 
     # Assert the requried paths and correct combination of arguments
@@ -352,7 +421,7 @@ if __name__ == '__main__':
         layer_names = [layer_names[i[0] - 1] for i in model.getUnconnectedOutLayers()]
 
     path = args.data_path
-    checkpoint_path = args.output_path
+    checkpoint_path = os.path.join(args.output_path, 'out_cow_test.mp4')
 
     if not os.path.exists(checkpoint_path):
         print("Creating checkpoint path for output videos:  ", checkpoint_path)
@@ -365,6 +434,7 @@ if __name__ == '__main__':
 
     Main_Handler(args, model, layer_names, path, checkpoint_path)
     # compare()
+    # generate_yaml(name = './configs/cow5_best.yml')
 
 
     #################
@@ -372,6 +442,6 @@ if __name__ == '__main__':
     #################
 
     # brain2.mp4 : 100, 75, 0.65, 0.55, 15 with YOLOv3
-    # cow5/  :  50,1000, 0, 0.25, 10, bilat = 10,50,50
+    # cow5/  :  10,1000, 0, 0.25, 10, bilat = 35,150,100, adathresh 21,10
 
 
