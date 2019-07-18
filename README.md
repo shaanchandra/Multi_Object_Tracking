@@ -49,8 +49,8 @@ This is the main file to run the autonomous object detection and tracking algori
 *Paths and selecteion arguments:*
 
 1. ***model***(int): Choose 0 for MobileNetSSD and 1 for YOLOv3 as the object detection model.
-2. ***prototext***(str): Path to Caffe 'deploy' prototxt file. Required if model = 0.
-3. ***model_path***(str): Path to the 'model_checkpoints' folder. The prrogram will choose to read the relevant model file automatically based on the selection of `model` parameter.
+2. ***fps***(float): At what fps to write to output file for playback analysis.
+3. ***model_path***(str): Path to the 'model_checkpoints' folder. The prrogram will choose to read the relevant model file(s) automatically based on the selection of `model` parameter.
 4. ***input_type***(int): Choose 0 if input is image sequences (video frames) and 1 if it is a video file
 5. ***data_path***(str): path to input video file/image sequences (NOTE: in case of video file specify the video file (ending in *.mp4/.avi*) and in case of image sequences just the folder that contains them.
 6. ***output_path***(str): Path to the folder where you want to save the processed output file.
@@ -64,8 +64,3 @@ This is the main file to run the autonomous object detection and tracking algori
 11. ***confidence***(int): minimum probability to filter weak detections
 12. ***thresh***(int): threshold when applying non-maximum suppression (overalp between the RPN boxes allowed to be considered as separate objects)
 13. ***skip_frames***(int): No. of frames to skip between detections and tracking phases
-
-
-
-
-
