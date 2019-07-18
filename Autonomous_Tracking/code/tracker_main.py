@@ -33,8 +33,8 @@ def Main_Processor(frame, model, layer_names, rgb, ct, W, H, writer, totalFrames
 
       # Initialize the writer to construct the output video
     if writer is None:
-        fourcc = cv2.VideoWriter_fourcc(*"MJPG")
-        writer = cv2.VideoWriter(checkpoint_path + 'out_cow.mp4', fourcc, args.fps, (W, H), True)
+        fourcc = cv2.VideoWriter_fourcc(*"MP4V")
+        writer = cv2.VideoWriter(checkpoint_path + 'out_cow_test.mp4', fourcc, args.fps, (W, H), True)
 
     # initialize the current status along with our list of bounding box rectangles returned by either (1) our object detector or
     # (2) the correlation trackers
@@ -124,9 +124,9 @@ def Main_Handler(args, model, layer_names, path, checkpoint_path):
             # grab the next frame
             frame = vs.read()
             frame = frame[1]
-            c+=1
-            if c<1500:
-                continue
+            # c+=1
+            # if c<1500:
+            #     continue
     
             # if we are viewing a video and we did not grab a frame then we have reached the end of the video
             if frame is None:
@@ -135,7 +135,7 @@ def Main_Handler(args, model, layer_names, path, checkpoint_path):
             # resize the frame to have a maximum width of 500 pixels, then convert the frame from BGR to RGB for dlib
             if args.resize:
                 frame = imutils.resize(frame, width=args.im_width)
-            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             W, H, writer, totalFrames, trackers, trackableObjects, df, startX, startY, endX, endY, start, end = Main_Processor(frame, model, layer_names, rgb, ct, W, H, writer, totalFrames, trackers,
                                                                                                                    trackableObjects, df, startX, startY, endX, endY, start, end, checkpoint_path)
 
@@ -181,10 +181,29 @@ def Main_Handler(args, model, layer_names, path, checkpoint_path):
             ### Higher SC means farther colors in the neigh will be mixed together resulting in larger areas of sem-equal color
             ### Higher SS means farther pixels will influence each other as long as colors close enough. If d given, that is
             ### taken as neigh size else d propr to SS
-            frame = cv2.bilateralFilter(frame, 4, 100, 100)
+            cv2.imshow("Orig Frame", frame)
+            frame = cv2.bilateralFilter(frame, 35, 150, 100)
 
+            # Segmentation
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            W, H, writer, totalFrames, trackers, trackableObjects, df, startX, startY, endX, endY, start, end = Main_Processor(frame, model, layer_names, rgb, ct, W, H, writer, totalFrames, trackers,
+            cv2.imshow("Gray", gray)
+            # ret, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+            thresh = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY,21,10)
+            cv2.imshow("Thresh", thresh)
+
+            # Further noise removal
+            kernel = np.ones((3, 3), np.uint8)
+            denoised = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel, iterations=1)
+            # cv2.imshow("Denoised-Thresh", denoised)
+
+            # # Finding sure foreground area
+            # dist_transform = cv2.distanceTransform(denoised, cv2.DIST_L2, 5)
+            # ret, sure_fg = cv2.threshold(dist_transform, 0.7 * dist_transform.max(), 255, 0)
+            # cv2.imshow("Foreground", sure_fg)
+
+
+            W, H, writer, totalFrames, trackers, trackableObjects, df, startX, startY, endX, endY, start, end = Main_Processor(frame, model, layer_names, thresh, ct, W, H, writer, totalFrames, trackers,
                                                                                                                    trackableObjects, df, startX, startY, endX, endY, start, end, checkpoint_path)
 
             key = cv2.waitKey(1) & 0xFF
@@ -235,6 +254,39 @@ def Main_Handler(args, model, layer_names, path, checkpoint_path):
     cv2.destroyAllWindows()
 
 
+def compare():
+    orig_path = os.path.join(args.output_path, 'out_cow_orig.mp4')
+    gray_path = os.path.join(args.output_path, 'out_cow_gray.mp4')
+    thresh_path = os.path.join(args.output_path, 'out_cow_test.mp4')
+
+    vs_orig = cv2.VideoCapture(orig_path)
+    vs_gray = cv2.VideoCapture(gray_path)
+    vs_thresh = cv2.VideoCapture(thresh_path)
+
+    while(True):
+        frame_orig = vs_orig.read()
+        frame_gray = vs_gray.read()
+        frame_thresh = vs_thresh.read()
+
+        frame_orig = frame_orig[1]
+        frame_thresh = frame_thresh[1]
+        frame_gray = frame_gray[1]
+
+        if frame_orig is None or frame_gray is None or frame_thresh is None:
+                break
+
+        cv2.imshow("Orig", frame_orig)
+        # cv2.imshow("Gray", frame_gray)
+        cv2.imshow("Thresh", frame_thresh)
+        time.sleep(0.3)
+
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+
+    vs_orig.release()
+    vs_gray.release()
+    vs_thresh.release()
+    cv2.destroyAllWindows()
 
 
 if __name__ == '__main__':
@@ -248,11 +300,11 @@ if __name__ == '__main__':
     parser.add_argument("--fps", type = int, help = "At what fps to write to output file for playback analysis", default = 4.5)
 
     # Tuning Parameters
-    parser.add_argument("--max_disappeared", type=int, help = "Maximum frames a tracked object can be marked as 'disappeared' before forgetting it", default = 50)
+    parser.add_argument("--max_disappeared", type=int, help = "Maximum frames a tracked object can be marked as 'disappeared' before forgetting it", default = 10)
     parser.add_argument("--max_distance", type=int, help ="Maximum distance the object should have drifted from its previous position to mark it is disappeared and treat it as a new object", default = 1000)
-    parser.add_argument("--resize", type = bool, help = "Whether to resize the frames for faster processing", default = False)
-    parser.add_argument("--im_width", type = int, help = "Image Width for resizing the image", default = 400)
-    parser.add_argument("--confidence", type=float, help="minimum probability to filter weak detections", default = 0.00)
+    parser.add_argument("--resize", type = bool, help = "Whether to resize the frames for faster processing", default = True)
+    parser.add_argument("--im_width", type = int, help = "Image Width for resizing the image", default = 700)
+    parser.add_argument("--confidence", type=float, help="minimum probability to filter weak detections", default = 0.1)
     parser.add_argument("--thresh", type =float, help = "threshold when applying non-maximum suppression", default = 0.25)
     parser.add_argument("--skip_frames", type=int, help="# of skip frames between detections", default= 10)
     args = parser.parse_known_args()[0]
@@ -312,11 +364,14 @@ if __name__ == '__main__':
         sys.exit("[!] Incorrect Input Type argument: Choose 0 for image sequences and 1 for video")
 
     Main_Handler(args, model, layer_names, path, checkpoint_path)
+    # compare()
+
 
     #################
     # Best Settings #
     #################
 
     # brain2.mp4 : 100, 75, 0.65, 0.55, 15 with YOLOv3
+    # cow5/  :  50,1000, 0, 0.25, 10, bilat = 10,50,50
 
 
