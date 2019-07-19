@@ -68,7 +68,7 @@ def Main_Processor(frame, model, layer_names, rgb, ct, W, H, writer, totalFrames
         trackableObjects[objectID] = track_obj
 
         text = "ID {}".format(objectID)
-        cv2.putText(frame, text, (centroid[0] - 10, centroid[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+        # cv2.putText(frame, text, (centroid[0] - 10, centroid[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
         cv2.circle(frame, (centroid[0], centroid[1]), 4, (0, 255, 0), -1)
         cv2.putText(frame, str(totalFrames), (5,25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
         cv2.putText(frame, status, (5,40), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
@@ -145,14 +145,14 @@ def Main_Handler(args, model, layer_names, path, checkpoint_path):
             ### Higher SS means farther pixels will influence each other as long as colors close enough. If d given, that is
             ### taken as neigh size else d propr to SS
             cv2.imshow("Orig Frame", frame)
-            frame = cv2.bilateralFilter(frame, 35, 150, 100)
+            frame = cv2.bilateralFilter(frame, args.diam, args.sigma_color, args.sigma_space)
 
             # Segmentation
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             # cv2.imshow("Gray", gray)
             # ret, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-            thresh = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY,21,10)
+            thresh = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, args.block_size, args.constant)
             cv2.imshow("Thresh", thresh)
 
             # Further noise removal
@@ -202,9 +202,9 @@ def Main_Handler(args, model, layer_names, path, checkpoint_path):
             # Apply Gaussian/BiLateral blur to smooth out the background
             if args.filter_type == 0:
                 ### cv2.GaussianBlur(img, (kernel_size), sigmas)
-                ### If one given, other also equal to this. If 0 given then calcul from the kernel size
+                ### sigmas: If one given, other also equal to this. If 0 given then calcul from the kernel size
                 cv2.imshow("Orig Frame", frame)
-                frame = cv2.GaussianBlur(frame, (5,5), 0)
+                frame = cv2.GaussianBlur(frame, (11,11), 0)
 
             else:
                 ### cv2.bilateralFilter(src_img, diameter, sigmaColor, sigmaSpace)
@@ -212,9 +212,9 @@ def Main_Handler(args, model, layer_names, path, checkpoint_path):
                 ### Higher SS means farther pixels will influence each other as long as colors close enough. If d given, that is
                 ### taken as neigh size else d propr to SS
                 cv2.imshow("Orig Frame", frame)
-                frame = cv2.bilateralFilter(frame, 35, args.sigma_color, args.sigma_space)
+                frame = cv2.bilateralFilter(frame, args.diam, args.sigma_color, args.sigma_space)
 
-            # Segmentation
+            # Segmentation by Adaptive Thresholding
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             # cv2.imshow("Gray", gray)
@@ -337,6 +337,7 @@ def generate_yaml(name):
             'filter_type' : 1,
             'sigma_color' : 150,
             'sigma_space' : 100,
+            'diam' : 27,
             'block_size' : 21,
             'constant' : 10}
 
@@ -347,31 +348,35 @@ def generate_yaml(name):
 
 
 
-
 if __name__ == '__main__':
     p = configargparse.ArgParser()
 
-    p.add('-c', '--config', required=False, is_config_file=True, help='Script running Autonomous object detection and tracking on cow5 data',
-          default = './configs/cow5_best.yml')
+    # p.add('-c', '--config', required=False, is_config_file=True, help='Script running Autonomous object detection and tracking on cow5 data',
+    #       default = '../configs/cow5_best.yml')
     # Required Paths
     p.add("--model", type = int, help = "Choose 0 for MobileNet and 1 for YOLOv3", default = 1)
     p.add("--model_path", type = str, help="path to Caffe pre-trained model", default = './model_checkpoint')
-    p.add("--input_type", type=int, help="Choose 0 for image sequences and 1 for video", default = 1)
+    p.add("--input_type", type=int, help="Choose 0 for image sequences and 1 for video", default = 0)
     p.add("--data_path", type=str, help="path to input video file", default = '../data/cow5/')
     p.add("--output_path", type=str, help="path to optional output video file", default = './output_checkpoints')
     p.add("--fps", type = float, help = "At what fps to write to output file for playback analysis", default = 4.5)
 
     # Pre-prcoessing parameters
+    ## Filter parameters
     p.add("--filter_type", type = int, help = "Choose 0 for Gaussian blur or 1 for BiLateral filter", default = 1)
     p.add("--sigma_color", type = int, help = "Filter sigma in the color space", default = 150)
     p.add("--sigma_space", type = int, help = "Filter sigma in the co-ordinate space", default = 100)
+    p.add("--diam", type = int, help = "Diameter of neighborhood", default = 27)
+    ## Thresholding parameters
     p.add("--block_size", type = int, help = "Pixel neighbourhood size for adaptive thresholding", default = 21)
     p.add("--constant", type = int, help = "Constant subtracted from weighted mean in adaptive thresholding", default = 10)
 
-    # Tuning Parameters
-    p.add("--max_disappeared", type=int, help = "Maximum frames a tracked object can be marked as 'disappeared' before forgetting it", default = 10)
-    p.add("--max_distance", type=int, help ="Maximum distance the object should have drifted from its previous position to mark it is disappeared and treat it as a new object", default = 1000)
-    p.add("--resize", type = bool, help = "Whether to resize the frames for faster processing", default = True)
+    # Detection and Tracking Parameters
+    p.add("--max_disappeared", type=int, help = "Maximum frames a tracked object can be marked as 'disappeared' before forgetting it",
+          default = 10)
+    p.add("--max_distance", type=int, help ="Maximum distance the object should have drifted from its previous position to mark it is disappeared and treat it as a new object",
+          default = 1000)
+    p.add("--resize", type = bool, help = "Whether to resize the frames for faster processing", default = False)
     p.add("--im_width", type = int, help = "Image Width for resizing the image", default = 300)
     p.add("--confidence", type=float, help="minimum probability to filter weak detections", default = 0.1)
     p.add("--thresh", type =float, help = "threshold when applying non-maximum suppression", default = 0.25)
@@ -407,7 +412,6 @@ if __name__ == '__main__':
         sys.exit("[!] WARNING !! Incorrect Model selection: Choose 0 for MobileNet and 1 for YOLOv3")
 
 
-
     # load our serialized model from disk
     print("="*80 + "\n\t\t\t\t TRACKING\n" + "="*80)
     print("\nLoading model...")
@@ -420,8 +424,9 @@ if __name__ == '__main__':
         layer_names = model.getLayerNames()
         layer_names = [layer_names[i[0] - 1] for i in model.getUnconnectedOutLayers()]
 
-    path = args.data_path
-    checkpoint_path = os.path.join(args.output_path, 'out_cow_test.mp4')
+
+    # NOTE: Add name of the outpuut file here
+    checkpoint_path = os.path.join(args.output_path, 'out_test.mp4')
 
     if not os.path.exists(checkpoint_path):
         print("Creating checkpoint path for output videos:  ", checkpoint_path)
@@ -432,9 +437,9 @@ if __name__ == '__main__':
     if not (args.input_type==0 or args.input_type == 1 ):
         sys.exit("[!] Incorrect Input Type argument: Choose 0 for image sequences and 1 for video")
 
-    Main_Handler(args, model, layer_names, path, checkpoint_path)
+    Main_Handler(args, model, layer_names, args.data_path, checkpoint_path)
     # compare()
-    # generate_yaml(name = './configs/cow5_best.yml')
+    # generate_yaml(name = '../configs/cow5_best.yml')
 
 
     #################
@@ -443,5 +448,3 @@ if __name__ == '__main__':
 
     # brain2.mp4 : 100, 75, 0.65, 0.55, 15 with YOLOv3
     # cow5/  :  10,1000, 0, 0.25, 10, bilat = 35,150,100, adathresh 21,10
-
-
