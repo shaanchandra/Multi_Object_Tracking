@@ -3,6 +3,12 @@ Multiple Object detection and tracking in videos
 
 ## Overview
 
+Each video frame/image sequence was pre-processed in primarily 2 steps before detection and tracking:
+
+1. **Bilateral Filtering**: The bilateral filter uses 2 Gaussian filters, one in the space domain and other (multiplicative) Gaussian filter in the pixel intensity domain. The Gaussian function of space makes sure that only pixels are *‘spatial neighbors’* are considered for filtering, while the Gaussian component applied in the intensity domain (a Gaussian function of intensity differences) ensures that only those pixels with intensities similar to that of the central pixel (‘intensity neighbors’) are included to compute the blurred intensity value. As a result, this method *preserves edges*, since for pixels lying near edges, neighboring pixels placed on the other side of the edge, and therefore exhibiting large intensity variations when compared to the central pixel, will not be included for blurring. The original paper is [Bilateral Filtering for Gray and Color Images](http://www.cs.jhu.edu/~misha/ReadingSeminar/Papers/Tomasi98.pdf)
+
+2. **Adaptive Thresholding**: We perform thresholding as a step for *foregroud-background segmentation*. Having a global threshold value is not ideal as different regions of the image can have differnt lighting conditions. Thus the adaptive threshold algorithm calculates the threshold for a small region of the image. This gives us different thresholds for different regions of the same image and hence better results for images with varying illumination.
+
 The repository contains object tracking using 3 methods:
 
 1. **Custom BoundingBox + tracking**: This method is implemented under `Custom_Tracking`. The program outputs each frame when run, allowing to be paused at any time and mark the object of interest by dragging a bounding-box across the frame using the cursor. In all the subsequent frames, the program uses one of the 5 specified tracking algorithms implemented in OpenCV (*csrt, kcf, boosting, mil, tild, mosse and medianflow*) to track the object. There is also an option to choose a more advanced tracker called the Distractor-aware Siamese Region Propsal Network (DaSiamRPN).
@@ -55,12 +61,21 @@ This is the main file to run the autonomous object detection and tracking algori
 5. ***data_path***(str): path to input video file/image sequences (NOTE: in case of video file specify the video file (ending in *.mp4/.avi*) and in case of image sequences just the folder that contains them.
 6. ***output_path***(str): Path to the folder where you want to save the processed output file.
 
-*Tuning parameters:*
+*Pre-prcoessing parameters:*
 
-7. ***max_disappeared***(int): Maximum subsequent frames a tracked object can be marked as 'disappeared' before forgetting it.
-8. ***max_distance***(int): Maximum distance the object should have drifted from its previous position to mark it is disappeared and treat it as a new object from now on
-9. ***resize***(bool): Resize the frames for faster processing
-10. ***im_width***(int): If resize=True then specify the frame width of the resized image
-11. ***confidence***(int): minimum probability to filter weak detections
-12. ***thresh***(int): threshold when applying non-maximum suppression (overalp between the RPN boxes allowed to be considered as separate objects)
-13. ***skip_frames***(int): No. of frames to skip between detections and tracking phases
+7. ***filter_type***(int): Choose 0 for Gaussian or 1 for BiLateral filter
+8. ***sigma_color***(int): Filter sigma in the color space(ideally between 10-150)
+9. ***sigma_space***(int): Filter sigma in the co-ordinate space(ideally between 10-150)
+10. ***diam***(int): Diameter of the neighborhood
+11. ***block_size***(int): Pixel neighborhood size for adaptive thresholding
+12. ***constant***(int): Constant subtracted from weighted mean in adaptive thresholding
+
+*Detection and Tracking parameters:*
+
+13. ***max_disappeared***(int): Maximum subsequent frames a tracked object can be marked as 'disappeared' before forgetting it.
+14. ***max_distance***(int): Maximum distance the object should have drifted from its previous position to mark it is disappeared and treat it as a new object from now on
+15. ***resize***(bool): Resize the frames for faster processing
+16. ***im_width***(int): If resize=True then specify the frame width of the resized image
+17. ***confidence***(int): minimum probability to filter weak detections
+18. ***thresh***(int): threshold when applying non-maximum suppression (overalp between the RPN boxes allowed to be considered as separate objects)
+19. ***skip_frames***(int): No. of frames to skip between detections and tracking phases
