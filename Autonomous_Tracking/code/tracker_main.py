@@ -68,12 +68,11 @@ def Main_Processor(frame, model, layer_names, rgb, ct, W, H, writer, totalFrames
         trackableObjects[objectID] = track_obj
 
         text = "ID {}".format(objectID)
-        # cv2.putText(frame, text, (centroid[0] - 10, centroid[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+        cv2.putText(frame, text, (centroid[0] - 10, centroid[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
         cv2.circle(frame, (centroid[0], centroid[1]), 4, (0, 255, 0), -1)
         cv2.putText(frame, str(totalFrames), (5,25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
         cv2.putText(frame, status, (5,40), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
         df.append([totalFrames, objectID, startX, startY, endX, endY, centroid[0], centroid[1]])
-
 
     if writer is not None:
         writer.write(frame)
@@ -232,7 +231,7 @@ def Main_Handler(args, model, layer_names, path, checkpoint_path):
             # ret, sure_fg = cv2.threshold(dist_transform, 0.7 * dist_transform.max(), 255, 0)
             # cv2.imshow("Foreground", sure_fg)
 
-            W, H, writer, totalFrames, trackers, trackableObjects, df, startX, startY, endX, endY, start, end = Main_Processor(frame, model, layer_names, thresh, ct, W, H, writer, totalFrames, trackers,
+            W, H, writer, totalFrames, trackers, trackableObjects, df, startX, startY, endX, endY, start, end = Main_Processor(frame, model, layer_names, rgb, ct, W, H, writer, totalFrames, trackers,
                                                                                                                    trackableObjects, df, startX, startY, endX, endY, start, end, checkpoint_path)
             key = cv2.waitKey(1) & 0xFF
             # if the `q` key was pressed, break from the loop
@@ -357,15 +356,15 @@ if __name__ == '__main__':
     p.add("--model", type = int, help = "Choose 0 for MobileNet and 1 for YOLOv3", default = 1)
     p.add("--model_path", type = str, help="path to Caffe pre-trained model", default = './model_checkpoint')
     p.add("--input_type", type=int, help="Choose 0 for image sequences and 1 for video", default = 0)
-    p.add("--data_path", type=str, help="path to input video file", default = '../data/cow5/')
+    p.add("--data_path", type=str, help="path to input video file", default = '../../data/cow5/')
     p.add("--output_path", type=str, help="path to optional output video file", default = './output_checkpoints')
     p.add("--fps", type = float, help = "At what fps to write to output file for playback analysis", default = 4.5)
 
     # Pre-prcoessing parameters
     ## Filter parameters
-    p.add("--filter_type", type = int, help = "Choose 0 for Gaussian blur or 1 for BiLateral filter", default = 1)
-    p.add("--sigma_color", type = int, help = "Filter sigma in the color space", default = 150)
-    p.add("--sigma_space", type = int, help = "Filter sigma in the co-ordinate space", default = 100)
+    p.add("--filter_type", type = int, help = "Choose 0 for Gaussian or 1 for BiLateral filter", default = 1)
+    p.add("--sigma_color", type = int, help = "Filter sigma in the color space (ideally between 10-150)", default = 140)
+    p.add("--sigma_space", type = int, help = "Filter sigma in the co-ordinate space (ideally between 10-150)", default = 100)
     p.add("--diam", type = int, help = "Diameter of neighborhood", default = 27)
     ## Thresholding parameters
     p.add("--block_size", type = int, help = "Pixel neighbourhood size for adaptive thresholding", default = 21)
@@ -373,14 +372,14 @@ if __name__ == '__main__':
 
     # Detection and Tracking Parameters
     p.add("--max_disappeared", type=int, help = "Maximum frames a tracked object can be marked as 'disappeared' before forgetting it",
-          default = 10)
+          default = 4)
     p.add("--max_distance", type=int, help ="Maximum distance the object should have drifted from its previous position to mark it is disappeared and treat it as a new object",
-          default = 1000)
-    p.add("--resize", type = bool, help = "Whether to resize the frames for faster processing", default = False)
-    p.add("--im_width", type = int, help = "Image Width for resizing the image", default = 300)
-    p.add("--confidence", type=float, help="minimum probability to filter weak detections", default = 0.1)
-    p.add("--thresh", type =float, help = "threshold when applying non-maximum suppression", default = 0.25)
-    p.add("--skip_frames", type=int, help="No. of frames to skip between detections", default= 10)
+          default = 200)
+    p.add("--resize", type = bool, help = "Whether to resize the frames for faster processing", default = True)
+    p.add("--im_width", type = int, help = "Image Width for resizing the image", default = 700)
+    p.add("--confidence", type=float, help="minimum probability to filter weak detections", default = 0.15)
+    p.add("--thresh", type =float, help = "threshold when applying non-maximum suppression", default = 0.1)
+    p.add("--skip_frames", type=int, help="No. of frames to skip between detections", default= 20)
 
     args = p.parse_args()
 

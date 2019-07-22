@@ -1,5 +1,6 @@
 from centroid_tracker.centroidtracker import CentroidTracker
 from centroid_tracker.trackableobject import TrackableObject
+from nms import non_max_suppression
 from imutils.video import VideoStream
 from imutils.video import FPS
 import pandas as pd
@@ -32,7 +33,6 @@ CLASSES = ["background", "aeroplane", "bicycle", "bird", "boat",
 def DETECT(args, model, layer_names, ct, frame, W, H, rgb):
     # instantiate our centroid tracker, then initialize a list to store each of our dlib correlation trackers, followed by a dictionary to
     # map each unique object ID to a TrackableObject
-    # ct = CentroidTracker(maxDisappeared=50, maxDistance=100)
     trackers = []
     # trackers = cv2.MultiTracker_create()
     startX, startY, endX, endY = 0,0,0,0
@@ -40,6 +40,7 @@ def DETECT(args, model, layer_names, ct, frame, W, H, rgb):
 
     # convert the frame to a blob and pass the blob through the network and obtain the detections
     if args.model == 0:
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         blob = cv2.dnn.blobFromImage(frame, 0.007843, (W, H), 127.5)
         model.setInput(blob)
         start = time.time()
@@ -64,9 +65,9 @@ def DETECT(args, model, layer_names, ct, frame, W, H, rgb):
                 idx = int(detections[0, 0, i, 1])
     
                 # if the class label is not a person, ignore it
-                if CLASSES[idx] != "person":
+                if CLASSES[idx] != "cow":
                     continue
-    
+
                 # compute the (x, y)-coordinates of the bounding box for the object
                 box = detections[0, 0, i, 3:7] * np.array([W, H, W, H])
                 (startX, startY, endX, endY) = box.astype("int")
@@ -82,12 +83,13 @@ def DETECT(args, model, layer_names, ct, frame, W, H, rgb):
                 # initBB = ([startX, startY, startX-endX, startY-endY])
                 # trackers.add(correl_tracker, frame, initBB)
     
-                cv2.rectangle(frame, (startX, startY), (endX, endY),(0, 255, 0), 2)
-                cv2.putText(frame, str(confidence), (startX, startY-5), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                cv2.rectangle(frame, (startX, startY), (endX, endY),(0, 255, 0), 1)
+                cv2.putText(frame, str(confidence), (startX, startY-5), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 1)
 
     else:
         boxes = []
         confidences = []
+        startX, startY, endX, endY = [], [], [], []
         # loop over each of the layer outputs
         for out in layer_outs:
             # loop over each detections
@@ -105,24 +107,12 @@ def DETECT(args, model, layer_names, ct, frame, W, H, rgb):
                     x = int(centerX - (width / 2))
                     y = int(centerY - (height / 2))
 
-                    startX = x
-                    startY = y
-                    endX = x+width
-                    endY = y+height
-
-                    # construct a dlib rectangle object from the bounding box coordinates and then start the dlib correlation tracker
-                    correl_tracker = dlib.correlation_tracker()
-                    rect = dlib.rectangle(startX, startY, endX, endY)
-                    correl_tracker.start_track(rgb, rect)
-
-                    # add the tracker to our list of trackers so we can utilize it during skip frames
-                    trackers.append(correl_tracker)
-
                     boxes.append([x,y, int(width), int(height)])
                     confidences.append(float(confidence))
 
         # apply non-maxima suppression to suppress weak, overlapping bounding boxes
-        idxs = cv2.dnn.NMSBoxes(boxes, confidences, args.confidence,args.thresh)
+        idxs = cv2.dnn.NMSBoxes(boxes, confidences, args.confidence, args.thresh)
+        # idxs = non_max_suppression(np.array(boxes), np.array(confidences), args.thresh)
 
         # ensure at least one detection exists
         if len(idxs) > 0:
@@ -131,13 +121,26 @@ def DETECT(args, model, layer_names, ct, frame, W, H, rgb):
                 # extract the bounding box coordinates
                 (x, y) = (boxes[i][0], boxes[i][1])
                 (w, h) = (boxes[i][2], boxes[i][3])
-    
-                # draw a bounding box rectangle and label on the frame
-                cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
-                cv2.putText(frame, str(confidences[i]), (x, y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
 
+                startX.append(x)
+                startY.append(y)
+                endX.append(x+w)
+                endY.append(y+h)
+
+                # construct a dlib rectangle object from the bounding box coordinates and then start the dlib correlation tracker
+                correl_tracker = dlib.correlation_tracker()
+                rect = dlib.rectangle(x, y, x+w, y+h)
+                correl_tracker.start_track(rgb, rect)
+
+                # add the tracker to our list of trackers so we can utilize it during skip frames
+                trackers.append(correl_tracker)
+
+                # draw a bounding box rectangle and label on the frame
+                cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
+                cv2.putText(frame, str(confidences[i]), (x, y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
 
     return startX, startY, endX, endY, ct, trackers, start, end
+
 
 
 
@@ -145,7 +148,6 @@ def TRACK(args, ct, frame, rects, trackers, rgb):
 
     # loop over the trackers
     for tracker in trackers:
-
         # update the tracker and grab the updated position
         tracker.update(rgb)
         # (success, box) = tracker.update(rgb)
