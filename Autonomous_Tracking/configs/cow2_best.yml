@@ -1,8 +1,8 @@
-block_size: 21
+block_size: 9
 confidence: 0.01
 constant: 5
-data_path: ../data/cow5/
-diam: 27
+data_path: ../data/cow2/
+diam: 15
 filter_type: 1
 fps: 4.5
 im_width: 700
@@ -13,7 +13,7 @@ model: 1
 model_path: ./model_checkpoint
 output_path: ./output_checkpoints/
 resize: true
-sigma_color: 140
-sigma_space: 100
-skip_frames: 6
+sigma_color: 50
+sigma_space: 50
+skip_frames: 35
 thresh: 0.3
