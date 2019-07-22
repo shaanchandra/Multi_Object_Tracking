@@ -61,12 +61,9 @@ def Main_Processor(frame, model, layer_names, rgb, ct, W, H, writer, totalFrames
     # Write text and mark centroids on the frames
     for (objectID, centroid) in objects.items():
         track_obj = trackableObjects.get(objectID, None)
-
         if track_obj is None:
             track_obj = TrackableObject(objectID, centroid)
-
         trackableObjects[objectID] = track_obj
-
         text = "ID {}".format(objectID)
         cv2.putText(frame, text, (centroid[0] - 10, centroid[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
         cv2.circle(frame, (centroid[0], centroid[1]), 4, (0, 255, 0), -1)
@@ -107,7 +104,6 @@ def Main_Handler(args, model, layer_names, path, checkpoint_path):
     start, end = 0,0
 
     if args.input_type == 1:
-
         vs = cv2.VideoCapture(path)
         if vs.isOpened() == False:
             sys.exit('Video file cannot be read! Please check input_vidpath to ensure it is correctly pointing to the video file')
@@ -117,6 +113,7 @@ def Main_Handler(args, model, layer_names, path, checkpoint_path):
             total = int(vs.get(prop))
         except:
             print("[!] WARNING ! Could not determine the No. of frames in the video. Can not estimate completion time")
+            
         c = 0
         while True:
             # grab the next frame
@@ -125,7 +122,6 @@ def Main_Handler(args, model, layer_names, path, checkpoint_path):
             c+=1
             # if c<1500:
             #     continue
-    
             # if we are viewing a video and we did not grab a frame then we have reached the end of the video
             if frame is None:
                 break
@@ -169,7 +165,6 @@ def Main_Handler(args, model, layer_names, path, checkpoint_path):
             # if the `q` key was pressed, break from the loop
             if key == ord("q"):
                 break
-
             # increment the total number of frames processed thus far and then update the FPS counter
             totalFrames += 1
             fps.update()
@@ -230,14 +225,17 @@ def Main_Handler(args, model, layer_names, path, checkpoint_path):
             # dist_transform = cv2.distanceTransform(denoised, cv2.DIST_L2, 5)
             # ret, sure_fg = cv2.threshold(dist_transform, 0.7 * dist_transform.max(), 255, 0)
             # cv2.imshow("Foreground", sure_fg)
+<<<<<<< HEAD
 
             W, H, writer, totalFrames, trackers, trackableObjects, df, startX, startY, endX, endY, start, end = Main_Processor(frame, model, layer_names, rgb, ct, W, H, writer, totalFrames, trackers,
+=======
+            W, H, writer, totalFrames, trackers, trackableObjects, df, startX, startY, endX, endY, start, end = Main_Processor(frame, model, layer_names, thresh, ct, W, H, writer, totalFrames, trackers,
+>>>>>>> f85c895c7ddb3bc07737f6fab624c8a71e785e2d
                                                                                                                    trackableObjects, df, startX, startY, endX, endY, start, end, checkpoint_path)
             key = cv2.waitKey(1) & 0xFF
             # if the `q` key was pressed, break from the loop
             if key == ord("q"):
                 break
-
             # increment the total number of frames processed thus far and then update the FPS counter
             totalFrames += 1
             fps.update()
@@ -410,7 +408,6 @@ if __name__ == '__main__':
     else:
         sys.exit("[!] WARNING !! Incorrect Model selection: Choose 0 for MobileNet and 1 for YOLOv3")
 
-
     # load our serialized model from disk
     print("="*80 + "\n\t\t\t\t TRACKING\n" + "="*80)
     print("\nLoading model...")
@@ -422,7 +419,6 @@ if __name__ == '__main__':
         model = cv2.dnn.readNetFromDarknet(config_path, wt_path)
         layer_names = model.getLayerNames()
         layer_names = [layer_names[i[0] - 1] for i in model.getUnconnectedOutLayers()]
-
 
     # NOTE: Add name of the outpuut file here
     checkpoint_path = os.path.join(args.output_path, 'out_test.mp4')
