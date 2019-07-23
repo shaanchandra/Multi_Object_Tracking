@@ -30,7 +30,7 @@ CLASSES = ["background", "aeroplane", "bicycle", "bird", "boat",
         "sofa", "train", "tvmonitor"]
 
 
-def DETECT(args, model, layer_names, ct, frame, W, H, rgb):
+def DETECT(args, model, layer_names, ct, frame, orig_frame, thresh, W, H, rgb):
     # instantiate our centroid tracker, then initialize a list to store each of our dlib correlation trackers, followed by a dictionary to
     # map each unique object ID to a TrackableObject
     trackers = []
@@ -75,7 +75,7 @@ def DETECT(args, model, layer_names, ct, frame, W, H, rgb):
                 # construct a dlib rectangle object from the bounding box coordinates and then start the dlib correlation tracker
                 correl_tracker = dlib.correlation_tracker()
                 rect = dlib.rectangle(startX, startY, endX, endY)
-                correl_tracker.start_track(rgb, rect)
+                correl_tracker.start_track(thresh, rect)
                 # correl_tracker = cv2.TrackerKCF_create()
     
                 # add the tracker to our list of trackers so we can utilize it during skip frames
@@ -85,6 +85,8 @@ def DETECT(args, model, layer_names, ct, frame, W, H, rgb):
     
                 cv2.rectangle(frame, (startX, startY), (endX, endY),(0, 255, 0), 1)
                 cv2.putText(frame, str(confidence), (startX, startY-5), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 1)
+                cv2.rectangle(orig_frame, (startX, startY), (endX, endY),(0, 255, 0), 1)
+                cv2.putText(orig_frame, str(confidence), (startX, startY-5), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 1)
 
     else:
         boxes = []
@@ -130,7 +132,7 @@ def DETECT(args, model, layer_names, ct, frame, W, H, rgb):
                 # construct a dlib rectangle object from the bounding box coordinates and then start the dlib correlation tracker
                 correl_tracker = dlib.correlation_tracker()
                 rect = dlib.rectangle(x, y, x+w, y+h)
-                correl_tracker.start_track(rgb, rect)
+                correl_tracker.start_track(thresh, rect)
 
                 # add the tracker to our list of trackers so we can utilize it during skip frames
                 trackers.append(correl_tracker)
@@ -138,18 +140,20 @@ def DETECT(args, model, layer_names, ct, frame, W, H, rgb):
                 # draw a bounding box rectangle and label on the frame
                 cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
                 cv2.putText(frame, str(confidences[i]), (x, y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
+                cv2.rectangle(orig_frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
+                cv2.putText(orig_frame, str(confidences[i]), (x, y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
 
     return startX, startY, endX, endY, ct, trackers, start, end
 
 
 
 
-def TRACK(args, ct, frame, rects, trackers, rgb):
+def TRACK(args, ct, frame, orig_frame, thresh, rects, trackers, rgb):
 
     # loop over the trackers
     for tracker in trackers:
         # update the tracker and grab the updated position
-        tracker.update(rgb)
+        tracker.update(thresh)
         # (success, box) = tracker.update(rgb)
         pos = tracker.get_position()
 
@@ -165,6 +169,7 @@ def TRACK(args, ct, frame, rects, trackers, rgb):
         rects.append((startX, startY, endX, endY))
         # rects.append((x,y,w,h))
         cv2.rectangle(frame, (startX, startY), (endX, endY),(0, 255, 0), 2)
+        cv2.rectangle(orig_frame, (startX, startY), (endX, endY),(0, 255, 0), 2)
     return rects
     # (success, box) = trackers.update(rgb)
     # for b in box:
