@@ -84,3 +84,13 @@ This is the main file to run the autonomous object detection and tracking algori
 17. ***confidence***(int): minimum probability to filter weak detections
 18. ***thresh***(int): threshold when applying non-maximum suppression (overalp between the RPN boxes allowed to be considered as separate objects)
 19. ***skip_frames***(int): No. of frames to skip between detections and tracking phases
+
+## Results
+
+**Bilateral Filter on original frame** We can see that the background is blurred reducing the noise while the edges of animals are preserved. The noisy ground background is now more or less unifrom and so is the wall at the back. In contrast, we can see that the cows are not blurred and their pixels are not mixed with the surrounding pixels at the edges. Hence, bilateral filter allows for well segmented denoising and preserving edges of objects which is a desirable property for object detection tasks.
+
+![BilaterFilter](https://github.com/shaanchandra/Multi_Object_Tracking/blob/master/results/bilat.gif)
+
+**Adaptive thresholding on filtered frame** We can see that the background is unfiormly segmented out and the edges of animals are sharp for the tracker to get clean inputs to work on.
+
+![AdpativeThresholding](https://github.com/shaanchandra/Multi_Object_Tracking/blob/master/results/thresh.gif)
