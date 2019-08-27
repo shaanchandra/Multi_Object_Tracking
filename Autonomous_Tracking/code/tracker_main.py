@@ -130,31 +130,33 @@ def Main_Handler(args, model, layer_names, path, checkpoint_path):
         c = 0
         while True:
             # grab the next frame
-            frame = vs.read()
-            frame = frame[1]
+            orig_frame = vs.read()
+            orig_frame = orig_frame[1]
             c+=1
             # if c<1500:
             #     continue
     
             # if we are viewing a video and we did not grab a frame then we have reached the end of the video
-            if frame is None:
+            if orig_frame is None:
                 break
     
             # resize the frame to have a maximum width of 500 pixels, then convert the frame from BGR to RGB for dlib
             if args.resize:
-                frame = imutils.resize(frame, width=args.im_width)
+                orig_frame = imutils.resize(orig_frame, width=args.im_width)
 
-            # Apply Gaussian/BiLateral blur to smooth out the background
-            ### cv2.GaussianBlur(img, (kernel_size), sigmas)
-            ### If one given, other also equal to this. If 0 given then calcul from the kernel size
-            # frame = cv2.GaussianBlur(frame, (5,5), 0)
+            if args.filter_type == 0:
+                ### cv2.GaussianBlur(img, (kernel_size), sigmas)
+                ### sigmas: If one given, other also equal to this. If 0 given then calcul from the kernel size
+                cv2.imshow("Orig Frame", orig_frame)
+                frame = cv2.GaussianBlur(orig_frame, (11,11), 0)
 
-            ### cv2.bilateralFilter(src_img, diameter, sigmaColor, sigmaSpace)
-            ### Higher SC means farther colors in the neigh will be mixed together resulting in larger areas of sem-equal color
-            ### Higher SS means farther pixels will influence each other as long as colors close enough. If d given, that is
-            ### taken as neigh size else d propr to SS
-            cv2.imshow("Orig Frame", frame)
-            frame = cv2.bilateralFilter(frame, args.diam, args.sigma_color, args.sigma_space)
+            else:
+                ### cv2.bilateralFilter(src_img, diameter, sigmaColor, sigmaSpace)
+                ### Higher SC means farther colors in the neigh will be mixed together resulting in larger areas of sem-equal color
+                ### Higher SS means farther pixels will influence each other as long as colors close enough. If d given, that is
+                ### taken as neigh size else d propr to SS
+                # cv2.imshow("Orig Frame", orig_frame)
+                frame = cv2.bilateralFilter(orig_frame, args.diam, args.sigma_color, args.sigma_space)
 
             # Segmentation
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -173,7 +175,7 @@ def Main_Handler(args, model, layer_names, path, checkpoint_path):
             # dist_transform = cv2.distanceTransform(denoised, cv2.DIST_L2, 5)
             # ret, sure_fg = cv2.threshold(dist_transform, 0.7 * dist_transform.max(), 255, 0)
             # cv2.imshow("Foreground", sure_fg)
-            W, H, writer, totalFrames, trackers, trackableObjects, df, startX, startY, endX, endY, start, end = Main_Processor(frame, model, layer_names, rgb, ct, W, H, writer, totalFrames, trackers,
+            W, H, writer_orig, writer_thresh, writer_bilat, totalFrames, trackers, trackableObjects, df, startX, startY, endX, endY, start, end = Main_Processor(frame, model, layer_names, rgb, orig_frame, thresh, ct, W, H, writer_orig, writer_thresh, writer_bilat, totalFrames, trackers,
                                                                                                                    trackableObjects, df, startX, startY, endX, endY, start, end, checkpoint_path)
             key = cv2.waitKey(1) & 0xFF
             # if the `q` key was pressed, break from the loop
